@@ -15,9 +15,16 @@ timeouts:
   pipeline_run_seconds: 1800
 
 # ImageGeneratorAgent'ın tek bir temel görselden ürettiği türevler (bkz. ARCHITECTURE.md §4).
+#
+# Cover boyutu, temel görselin GERÇEK boyutuna göre seçilir: varsayılan sağlayıcı
+# (replicate + flux-schnell) en fazla ~1 megapiksel üretir, 16:9'da bu 1344x768'e denk
+# gelir. Cover 1600x900 bırakıldığında image_processing her makalede upscale yapıp
+# "keskinlik düşebilir" uyarısı veriyordu. Daha büyük bir cover gerekiyorsa temel
+# görseli de büyütmek gerekir (ör. black-forest-labs/flux-1.1-pro; görsel maliyeti
+# ~0.003 -> ~0.04 USD).
 image_derivatives:
   cover:
-    size: [1600, 900]
+    size: [1344, 768]
     format: webp
   thumbnail:
     size: [600, 450]

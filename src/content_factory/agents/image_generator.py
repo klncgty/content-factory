@@ -22,10 +22,30 @@ from content_factory.knowledge.loader import BrandKnowledge
 from content_factory.providers.image import ImageRequest
 
 _CATEGORY_VISUAL_HINTS: dict[str, str] = {
-    "olive_and_oil": "zeytinyağı şişesi, zeytin dalı, doğal ışık",
-    "wooden_products": "zeytin ağacından ahşap mutfak ürünü, sıcak stüdyo ışığı",
+    "olive_and_oil": (
+        "a bottle of extra virgin olive oil beside fresh olives and an olive branch "
+        "on a rustic wooden table"
+    ),
+    "wooden_products": (
+        "a handcrafted olive wood kitchen board and utensils on a linen cloth, "
+        "warm studio light"
+    ),
 }
-_DEFAULT_VISUAL_HINT = "zeytin ve zeytinyağı, doğal/sıcak tonlar"
+_DEFAULT_VISUAL_HINT = (
+    "olives and olive oil on a rustic wooden surface, warm natural tones"
+)
+"""Sahne tarifleri İNGİLİZCE tutulur: görsel modelleri (flux) İngilizce prompt'larda
+belirgin biçimde daha isabetli çalışıyor ve Türkçe metin verildiğinde onu görselin
+ÜZERİNE yazmaya çalışıyor (ölçüm: Türkçe prompt'la üretilen kapak, makale başlığını
+bozuk harflerle basılmış bir infografiğe çevirdi)."""
+
+_PHOTOGRAPHIC_STYLE = (
+    "editorial food photography, natural window light, shallow depth of field, "
+    "photorealistic, high detail. No text, no letters, no words, no labels, no logo, "
+    "no watermark, no infographic, no collage, no split-screen comparison."
+)
+"""Negatif talimatlar prompt'un İÇİNE yazılır: flux-schnell'in ayrı bir
+`negative_prompt` girdisi yok (bkz. Replicate şeması)."""
 
 
 class ImageGeneratorAgent(BaseAgent[Article, Article]):
@@ -64,13 +84,16 @@ class ImageGeneratorAgent(BaseAgent[Article, Article]):
         return input_data.model_copy(update={"image": image_data})
 
     def _build_prompt(self, article: Article, knowledge: BrandKnowledge) -> str:
+        """Görsel prompt'u yalnızca SAHNE tarif eder; makale başlığı prompt'a GİRMEZ.
+
+        Başlık verildiğinde model onu görselin üzerine yazmaya çalışıyor ve makaleyle
+        alakasız, bozuk yazılı bir infografik üretiyordu (bkz. `_CATEGORY_VISUAL_HINTS`).
+        Konuyla bağ, makalenin kategorisine karşılık gelen sahne üzerinden kurulur —
+        marka bağlamı da (Türkçe olduğu için) prompt'a değil, yalnızca sahne seçimine
+        girer."""
+        del knowledge  # sahne seçimi kategoriden gelir; Türkçe marka metni prompt'a girmez
         visual_hint = _CATEGORY_VISUAL_HINTS.get(article.category, _DEFAULT_VISUAL_HINT)
-        brand_summary = knowledge.get_brand().strip()[:300]
-        return (
-            f"Konu: {article.title}. Görsel öğeler: {visual_hint}. "
-            f"Marka bağlamı: {brand_summary}. Fotoğraf gerçekçi, reklam kalitesinde olmalı, "
-            "metin/logo içermemeli."
-        )
+        return f"{visual_hint}. {_PHOTOGRAPHIC_STYLE}"
 
     def _staging_dir(self, slug: str) -> Path:
         run_dir = self.context.settings.resolve(

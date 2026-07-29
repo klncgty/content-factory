@@ -39,11 +39,16 @@ def test_generates_three_derivatives_with_correct_sizes(
 
     article = agent(_article())
 
+    # Beklenen boyutlar config'den okunur: türev boyutları bir ayar (bkz. engine.yaml —
+    # cover, temel görselin gerçek çözünürlüğüne göre seçiliyor), sabitlemek testi her
+    # ayar değişikliğinde kırıyordu. Doğrulanan davranış "üç türev de config'deki
+    # boyutta üretiliyor" olmalı.
+    derivatives = agent_context.settings.engine.image_derivatives
     assert article.image is not None
     for path_str, expected_size in [
-        (article.image.cover_path, (1600, 900)),
-        (article.image.thumbnail_path, (600, 450)),
-        (article.image.og_image_path, (1200, 630)),
+        (article.image.cover_path, derivatives["cover"].size),
+        (article.image.thumbnail_path, derivatives["thumbnail"].size),
+        (article.image.og_image_path, derivatives["og_image"].size),
     ]:
         assert path_str is not None
         path = Path(path_str)
@@ -68,7 +73,12 @@ def test_prompt_reflects_category_visual_hints(
 
     agent(_article())
 
-    assert "zeytinyağı şişesi" in stub.requests[0].prompt
+    prompt = stub.requests[0].prompt
+    assert "olive oil" in prompt  # olive_and_oil kategorisinin sahnesi
+    # Başlık prompt'a GİRMEMELİ: verildiğinde model onu görselin üzerine bozuk harflerle
+    # yazıp makaleyle alakasız bir infografik üretiyordu.
+    assert _article().title not in prompt
+    assert "No text" in prompt
 
 
 def test_missing_slug_raises(agent_context: AgentContext, base_image: Path) -> None:

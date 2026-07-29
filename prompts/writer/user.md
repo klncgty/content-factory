@@ -20,8 +20,11 @@ Uzunluk sınırları (Editor bunları deterministik olarak denetler, ihlal redde
 en az $min_word_count, en fazla $max_word_count kelime.
 
 Bölüm başına bütçe: outline'daki her `##` bölümü **yaklaşık $words_per_section kelime**
-olmalı (en az 2-3 paragraf). Tek cümlelik veya tek paragraflık bölüm yazma; bir bölümü
-kısa geçersen makale alt sınırın altında kalır ve reddedilir.
+olmalı. Bunu tutturmanın yolu yapıdır: her bölümde **en az 2 paragraf**, her paragrafta
+**3-5 tam cümle** yaz. Tek cümlelik veya tek paragraflık bölüm yazma; bir bölümü kısa
+geçersen makale alt sınırın altında kalır ve makale reddedilir.
+
+Outline'daki bölümlerin HEPSİNİ yaz — bölüm atlama veya birleştirme.
 
 Outline:
 $outline

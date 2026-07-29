@@ -55,8 +55,13 @@ def test_create_default_llm_provider_uses_models_default_provider(settings: Sett
 def test_create_agent_scoped_llm_provider_uses_agent_specific_provider(settings: Settings) -> None:
     provider = create_agent_scoped_llm_provider(settings)
     assert isinstance(provider, AgentScopedLLMProvider)
-    assert isinstance(provider.provider_for("writer"), GroqProvider)
-    assert isinstance(provider.provider_for("topic_scout"), GroqProvider)
+    # Beklenen sınıflar config'den okunur: hangi ajanın hangi sağlayıcıda çalıştığı bir
+    # ayardır (writer, Groq'un dakikalık token tavanı yüzünden Replicate'e taşındı) —
+    # sabitlemek testi her ayar değişikliğinde kırıyordu. Doğrulanan davranış
+    # "her ajan config'inde yazan sağlayıcıya bağlanıyor" olmalı.
+    for agent_name in ("writer", "topic_scout"):
+        expected = settings.models.for_agent(agent_name).provider
+        assert provider.provider_for(agent_name).name == expected
     # `image_generator` config'i LLM sağlayıcı tarafından kullanılmaz.
     assert "image_generator" not in provider._providers
     provider.close()

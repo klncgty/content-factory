@@ -22,6 +22,7 @@ import pytest
 from content_factory.integrations.image_client import (
     GoogleAIStudioImageProvider,
     OpenRouterImageProvider,
+    ReplicateImageProvider,
     available_image_providers,
     create_image_provider,
 )
@@ -461,20 +462,218 @@ def test_google_falls_back_to_google_api_key(
     assert Path(provider.generate(_request()).file_path).exists()
 
 
+# ------------------------------------------------------------------------------- Replicate
+
+REPLICATE_MODEL = "black-forest-labs/flux-schnell"
+REPLICATE_VERSION = "c846a69991daf4c0e5d016514849d14ee5b2e6846ce6b9d6f21369e564cfe51e"
+IMAGE_URL = "https://replicate.test/out-0.webp"
+
+
+def _replicate_provider(tmp_path: Path, handler: object, **kwargs: object):
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler),  # type: ignore[arg-type]
+        base_url="https://api.replicate.test/v1",
+    )
+    kwargs.setdefault("aspect_ratio", "16:9")
+    kwargs.setdefault("api_key", "test-key")
+    return ReplicateImageProvider(
+        output_dir=tmp_path / "base",
+        client=client,
+        sleep_fn=lambda _: None,
+        **kwargs,  # type: ignore[arg-type]
+    )
+
+
+def _replicate_handler(
+    captured: list[httpx.Request],
+    *,
+    statuses: list[str] | None = None,
+    output: object = None,
+):
+    """Sürüm çözümlemesi + üretim + (gerekirse) yoklama akışını taklit eder."""
+    remaining = list(statuses or ["succeeded"])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        if request.url.path.endswith(f"/models/{REPLICATE_MODEL}"):
+            return httpx.Response(200, json={"latest_version": {"id": REPLICATE_VERSION}})
+        if str(request.url).endswith(".webp"):
+            return httpx.Response(200, content=PNG_BYTES)
+        status = remaining.pop(0) if remaining else "succeeded"
+        body: dict[str, object] = {
+            "id": "pred-1",
+            "status": status,
+            "urls": {"get": "/predictions/pred-1"},
+        }
+        if status == "succeeded":
+            body["output"] = output if output is not None else [IMAGE_URL]
+        return httpx.Response(201 if request.method == "POST" else 200, json=body)
+
+    return handler
+
+
+def _fake_download(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Replicate çıktısı bir URL'dir ve indirme `httpx.get` ile yapılır (mock transport'un
+    dışında kalır) — testlerde ağa çıkılmaması için taklit edilir."""
+
+    def fake_get(url: str, **kwargs: object) -> httpx.Response:
+        assert url == IMAGE_URL
+        return httpx.Response(200, content=PNG_BYTES)
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+
+def test_replicate_generate_downloads_and_writes_image(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fake_download(monkeypatch)
+    captured: list[httpx.Request] = []
+    provider = _replicate_provider(tmp_path, _replicate_handler(captured))
+
+    result = provider.generate(_request(model=REPLICATE_MODEL))
+
+    written = Path(result.file_path)
+    assert written.read_bytes() == PNG_BYTES
+    assert written.suffix == ".webp"
+    assert result.provider == "replicate"
+    provider.close()
+
+
+def test_replicate_resolves_version_and_sends_it_in_body(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sürüm kimliği config'de tutulmaz; her üretimde API'den okunur."""
+    _fake_download(monkeypatch)
+    captured: list[httpx.Request] = []
+    provider = _replicate_provider(tmp_path, _replicate_handler(captured))
+
+    provider.generate(_request(model=REPLICATE_MODEL, size=(1600, 900)))
+
+    assert captured[0].method == "GET"
+    assert captured[0].url.path.endswith(f"/models/{REPLICATE_MODEL}")
+    submit = captured[1]
+    assert submit.method == "POST" and submit.url.path.endswith("/predictions")
+    assert submit.headers["Prefer"] == "wait"
+    body = json.loads(submit.content)
+    assert body["version"] == REPLICATE_VERSION
+    assert body["input"]["prompt"] == "zeytinyağı şişesi, doğal ışık"
+    assert body["input"]["aspect_ratio"] == "16:9"
+    assert body["input"]["num_outputs"] == 1
+    provider.close()
+
+
+def test_replicate_polls_until_terminal_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`Prefer: wait` sonucu getirmezse tahmin bitene kadar yoklanır."""
+    _fake_download(monkeypatch)
+    captured: list[httpx.Request] = []
+    provider = _replicate_provider(
+        tmp_path, _replicate_handler(captured, statuses=["starting", "processing", "succeeded"])
+    )
+
+    assert Path(provider.generate(_request(model=REPLICATE_MODEL)).file_path).exists()
+    poll_requests = [r for r in captured if r.method == "GET" and "/predictions/" in r.url.path]
+    assert len(poll_requests) == 2
+    provider.close()
+
+
+def test_replicate_failed_prediction_raises_invalid_request(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith(f"/models/{REPLICATE_MODEL}"):
+            return httpx.Response(200, json={"latest_version": {"id": REPLICATE_VERSION}})
+        return httpx.Response(
+            201, json={"id": "p", "status": "failed", "error": "NSFW içerik saptandı"}
+        )
+
+    provider = _replicate_provider(tmp_path, handler)
+    with pytest.raises(ImageInvalidRequestError, match="NSFW"):
+        provider.generate(_request(model=REPLICATE_MODEL))
+    provider.close()
+
+
+def test_replicate_missing_version_raises_parsing_error(tmp_path: Path) -> None:
+    provider = _replicate_provider(
+        tmp_path, lambda request: httpx.Response(200, json={"name": "flux-schnell"})
+    )
+    with pytest.raises(ImageResponseParsingError, match="güncel sürümü"):
+        provider.generate(_request(model=REPLICATE_MODEL))
+    provider.close()
+
+
+def test_replicate_output_without_url_raises_parsing_error(tmp_path: Path) -> None:
+    captured: list[httpx.Request] = []
+    provider = _replicate_provider(tmp_path, _replicate_handler(captured, output=[]))
+    with pytest.raises(ImageResponseParsingError, match="görsel URL"):
+        provider.generate(_request(model=REPLICATE_MODEL))
+    provider.close()
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (401, ImageAuthenticationError),
+        (402, ImageInsufficientCreditError),
+        (429, ImageRateLimitError),
+        (422, ImageInvalidRequestError),
+        (500, ImageProviderUnavailableError),
+    ],
+)
+def test_replicate_http_errors_map_to_typed_exceptions(
+    tmp_path: Path, status: int, expected: type[Exception]
+) -> None:
+    provider = _replicate_provider(
+        tmp_path, lambda request: httpx.Response(status, text="hata gövdesi")
+    )
+    with pytest.raises(expected):
+        provider.generate(_request(model=REPLICATE_MODEL))
+    provider.close()
+
+
+def test_replicate_missing_api_key_raises_before_any_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("REPLICATE_API_KEY", raising=False)
+    monkeypatch.delenv("REPLICATE_API_TOKEN", raising=False)
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(200, json={})
+
+    provider = _replicate_provider(tmp_path, handler, api_key="")
+    with pytest.raises(ImageAuthenticationError):
+        provider.generate(_request(model=REPLICATE_MODEL))
+    assert calls == []
+    provider.close()
+
+
 # ------------------------------------------------------------------------------- factory
 
 
-def test_registry_contains_both_providers() -> None:
-    assert set(available_image_providers()) >= {"google-ai-studio", "openrouter"}
+def test_registry_contains_all_providers() -> None:
+    assert set(available_image_providers()) >= {"replicate", "google-ai-studio", "openrouter"}
 
 
 def test_create_image_provider_reads_models_yaml(tmp_path: Path, settings: Settings) -> None:
-    """Varsayılan yapılandırma Google AI Studio'dur (bkz. config/models.yaml)."""
+    """Varsayılan yapılandırma Replicate'tir (bkz. config/models.yaml gerekçesi: Gemini
+    bu hesapta görsel modellerinde `limit: 0` döndürüyor)."""
+    provider = create_image_provider(settings, output_dir=tmp_path)
+
+    assert isinstance(provider, ReplicateImageProvider)
+    config = settings.models.for_agent("image_generator")
+    assert provider._aspect_ratio == config.aspect_ratio  # noqa: SLF001
+    provider.close()
+
+
+def test_create_image_provider_can_build_google(tmp_path: Path, settings: Settings) -> None:
+    settings.models.agents["image_generator"] = settings.models.for_agent(
+        "image_generator"
+    ).model_copy(update={"provider": "google-ai-studio"})
+
     provider = create_image_provider(settings, output_dir=tmp_path)
 
     assert isinstance(provider, GoogleAIStudioImageProvider)
-    config = settings.models.for_agent("image_generator")
-    assert provider._aspect_ratio == config.aspect_ratio  # noqa: SLF001
     provider.close()
 
 

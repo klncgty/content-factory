@@ -42,20 +42,23 @@ agents:
     max_tokens: 2500          # ölçülen çıktı ~570 + reasoning payı
 
   writer:
-    provider: groq
-    # llama-3.3-70b-versatile denendi ve KULLANILAMAZ: 1000 kelime istenip editor'ün 800
-    # kelime alt sınırı prompt'a yazılmasına rağmen ~315 kelime yazıyor, editor geri
-    # bildirimiyle 3 denemede de uzatmıyor -> her run needs_review ile kapanıyordu.
-    # gpt-oss-120b aynı brief'te ~890 kelime yazıyor (engine varsayılanı zaten budur).
+    # Replicate: Groq'un dakikalık token tavanı (gpt-oss-120b'de 8k) writer'ın tek
+    # isteğini (prompt 3.4k + max_tokens 4.2k ≈ 7.7k) neredeyse tamamen dolduruyordu;
+    # editor retry turundaki ikinci çağrı hep 429 alıp run'ı kilitliyordu. Replicate'te
+    # dakikalık token tavanı yok, AYNI model orada da mevcut ve Türkçe kalitesi ölçüldü
+    # (871-975 kelime). Bu yüzden yalnızca bu ajan Replicate'e taşındı.
+    provider: replicate
+    # Replicate'te model adı `sahip/model` biçimindedir; sürüm kimliği config'de
+    # tutulmaz, provider ilk kullanımda API'den okur.
+    # Not: llama-3.3-70b denendi ve writer olarak KULLANILAMAZ — 1000 kelime istenmesine
+    # rağmen ~315 kelime yazıyor ve Türkçesi bozuluyor.
     model: openai/gpt-oss-120b
-    # Fallback yalnızca 120b'nin kotası dolduğunda devreye girer; kısa yazdığı için
-    # editor muhtemelen reddeder ama run tamamen ölmez.
-    fallback_models: [llama-3.3-70b-versatile]
+    # Fallback listesi AYNI sağlayıcı içinde denenir; Groq model adları burada geçersiz.
+    fallback_models: [openai/gpt-oss-20b]
     # DİKKAT — bu değeri düşürmeyin: gpt-oss bir reasoning modelidir ve max_tokens'ı
     # düşünme + metin arasında paylaşır (ölçüm: ~1300 token düşünme). 3500'e çekildiğinde
     # makale ~550 kelimede ORTASINDAN KESİLİYORDU (finish_reason=length).
     # ~1000 kelime Türkçe metin ≈ 2200 token + düşünme payı => 4200.
-    # TPM kontrolü: prompt ~3.3k + 4.2k = 7.5k < 8k tavan.
     max_tokens: 4200
 
   seo_optimizer:
@@ -76,11 +79,15 @@ agents:
     provider: groq
     # Writer gpt-oss-120b; editor bilinçli olarak farklı bir aile (llama).
     model: llama-3.3-70b-versatile
-    # qwen3.6 düşünme bloğunu `content` içine gömdüğü için önce kullanılamıyordu; Groq
-    # provider'ı bu aileye `reasoning_format: parsed` gönderdiğinden (groq.py) artık
-    # temiz JSON dönüyor ve kendi ayrı TPM kovasına sahip olduğu için iyi bir ara halka.
-    fallback_models: [qwen/qwen3.6-27b, openai/gpt-oss-20b]
-    max_tokens: 2500          # ölçülen çıktı ~250; prompt ~5k (+ düşünme payı) < 8k tavan
+    # Zincirin TAMAMI reasoning YAPMAYAN modellerden kurulur. qwen3.6 ve gpt-oss-20b
+    # denendi ve editor rolünde kullanılamaz: prompt ~5k token olduğu için bu role
+    # düşen max_tokens bütçesi (aşağıya bak) düşünmeye yetmiyor, modeller
+    # `finish_reason=length` ile BOŞ içerik döndürüyor ve zincir tükeniyordu.
+    fallback_models: [llama-3.1-8b-instant]
+    # 900: ölçülen çıktı ~250 token. Üst sınırı 8b-instant'ın TPM tavanı belirliyor
+    # (6k) — prompt ~5k + 900 = 5.9k. Daha büyük bir değer her çağrıda 413 alıp
+    # provider'ın daraltma turuna girmesine yol açıyor.
+    max_tokens: 900
 
   scope_guard:
     provider: groq

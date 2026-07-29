@@ -19,6 +19,7 @@ from content_factory.providers.llm.exceptions import UnknownProviderError
 from content_factory.providers.llm.groq import GroqProvider
 from content_factory.providers.llm.models import LLMRequest, LLMResponse, LLMStreamChunk
 from content_factory.providers.llm.openrouter import OpenRouterProvider
+from content_factory.providers.llm.replicate import ReplicateProvider
 from content_factory.providers.llm.retry import RetryPolicy
 from content_factory.settings.loader import Settings
 
@@ -187,4 +188,4 @@ def create_agent_scoped_llm_provider(
 
 register_provider("openrouter", OpenRouterProvider)
 register_provider("groq", GroqProvider)
-register_provider("groq", GroqProvider)
+register_provider("replicate", ReplicateProvider)

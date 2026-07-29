@@ -19,6 +19,13 @@ class StrategistAgent(BaseAgent[StrategistInput, Brief]):
         topic = input_data.topic
         research = input_data.research
 
+        # Outline'ın bölüm sayısı, makalenin uzunluk alt sınırını belirleyen asıl kaldıraç:
+        # yazar bölüm başına ortalama ~180 kelime yazıyor, dolayısıyla 4 bölümlük bir
+        # outline 800 kelime alt sınırını yapısal olarak tutturamıyor (ölçüm: 4 bölüm ->
+        # 351 kelime, 5 bölüm -> 816 kelime). Taban bölüm sayısı buradan hesaplanır.
+        bounds = self.context.settings.brand.content_bounds
+        target_word_count = int(bounds.min_word_count * 1.25)
+
         user_message = self.load_prompts().render_user(
             topic_title=topic.title,
             topic_category=topic.category or "(belirtilmemiş)",
@@ -27,11 +34,22 @@ class StrategistAgent(BaseAgent[StrategistInput, Brief]):
             suggested_angle=research.suggested_angle or "(belirtilmemiş)",
             target_audience=knowledge.get_target_audience(),
             writing_rules_summary=knowledge.get_writing_rules(),
+            min_word_count=str(bounds.min_word_count),
+            max_word_count=str(bounds.max_word_count),
+            target_word_count=str(target_word_count),
+            min_sections=str(self._min_sections(target_word_count)),
         )
         content = self.call_llm(
             system_prompt=self.load_prompts().system, user_message=user_message
         )
         return self._parse_response(content, topic=topic)
+
+    _OBSERVED_WORDS_PER_SECTION = 180
+    """Writer'ın bölüm başına ölçülen ortalama uzunluğu (gpt-oss-120b, Türkçe)."""
+
+    @classmethod
+    def _min_sections(cls, target_word_count: int) -> int:
+        return max(5, -(-target_word_count // cls._OBSERVED_WORDS_PER_SECTION))
 
     def _parse_response(self, content: str, *, topic: Topic) -> Brief:
         data = parse_llm_json(content, agent_name=self.name)

@@ -19,6 +19,13 @@ $target_audience
 
 $writing_rules_summary
 
+## Uzunluk ve Yapı Kısıtı
+
+Makale $min_word_count-$max_word_count kelime olacak (Editor bunu deterministik denetler).
+Yazar her bölümü ortalama ~180 kelime yazıyor; bu yüzden outline **en az $min_sections
+bölüm** içermeli. Daha az bölümlü bir outline, yazarın alt sınırın altında kalmasına ve
+makalenin reddedilmesine yol açıyor. `target_word_count` alanına $target_word_count yaz.
+
 ## Görev
 
 Yalnızca şu JSON şemasına uyan bir nesne döndür, başka hiçbir açıklama ekleme:
