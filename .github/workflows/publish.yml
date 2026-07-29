@@ -1,0 +1,83 @@
+name: Yayınla (3 günde bir)
+
+# Zamanlama: 3 günde bir, 07:00 Europe/Istanbul. GitHub cron'u UTC çalıştığı için 04:00 UTC
+# yazılır (yaz saati farkı ±1 saat kayma yaratır, içerik yayını için önemsiz).
+#
+# `*/3` ayın GÜNÜNE uygulanır (1, 4, 7, ... 31), yani ay sonunda bir tur 1-2 gün kayabilir.
+# Gerçek "her 72 saat" garantisi cron ile mümkün değil; bu kadarı yayın ritmi için yeterli.
+on:
+  schedule:
+    - cron: "0 4 */3 * *"
+  workflow_dispatch: # Actions sekmesinden elle de tetiklenebilir (ilk deneme için)
+
+# Aynı anda iki run çalışmasın: ikisi de aynı hedef repoya push eder ve aynı state
+# veritabanını günceller.
+concurrency:
+  group: publish-oleart
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # state veritabanını bu repoya geri commit etmek için
+
+    steps:
+      - name: Motoru al
+        uses: actions/checkout@v4
+
+      - name: Hedef repoyu al (publish.yaml -> target_repo_path)
+        uses: actions/checkout@v4
+        with:
+          repository: klncgty/oleart
+          path: oleart.co
+          token: ${{ secrets.GIT_TOKEN }}
+
+      - name: uv kur
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Bağımlılıklar
+        run: uv sync
+
+      - name: Git kimliği (commit için zorunlu)
+        run: |
+          for repo in . oleart.co; do
+            git -C "$repo" config user.name "content-factory[bot]"
+            git -C "$repo" config user.email "content-factory@users.noreply.github.com"
+          done
+
+      - name: Pipeline
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          REPLICATE_API_KEY: ${{ secrets.REPLICATE_API_KEY }}
+          # Aşağıdakiler mevcut model profilinde kullanılmıyor ama config değişirse gerekir.
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # Hedef repoya push + PR açma/merge etme yetkisi (bkz. .env.example).
+          GIT_TOKEN: ${{ secrets.GIT_TOKEN }}
+        # `--target-repo`: publish.yaml `../oleart.co` diyor, Actions'ta hedef repo
+        # çalışma dizininin İÇİNE (`oleart.co/`) klonlanıyor.
+        run: uv run content-factory --brand oleart --target-repo "$GITHUB_WORKSPACE/oleart.co"
+
+      - name: Çalışma günlüğünü sakla
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-logs
+          path: state/oleart/runs/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: State veritabanını geri commit et
+        if: always() # pipeline yarıda kalsa da o ana kadarki durum korunmalı
+        run: |
+          if [ -z "$(git status --porcelain data/)" ]; then
+            echo "state değişmedi, commit atlanıyor"
+            exit 0
+          fi
+          git add data/
+          git commit -m "state: $(date -u +%Y-%m-%d) yayın run'ı"
+          git push

@@ -14,9 +14,14 @@ dist/
 # uv-managed virtualenv (uv.lock KALIR — reproducible install için commit edilir)
 .venv/
 
-# Marka-başına çalışma zamanı çıktıları — kalıcı olması gereken tek şey data/{brand}/*.db
-# DIŞINDA, o da genellikle .db uzantısıyla burada ignore edilir (SQLite dosyası,
-# StateStore her ortamda yeniden oluşturabilir; kalıcı "kaynak" YAML/markdown'lardır).
-data/*/*.db
+# Marka-başına çalışma zamanı çıktıları.
 state/*/runs/
 state/*/needs_review/
+
+# StateStore veritabanı COMMIT EDİLİR. Yerelde tek bir makinede çalışırken gerekmiyordu
+# ama zamanlanmış GitHub Actions run'ları izole ve geçici bir dosya sistemi kullanıyor:
+# veritabanı repoda tutulmazsa her run boş bir state ile başlar, TopicScout aynı konuları
+# tekrar üretir ve Linker eski makaleleri hiç görmez. İş akışı run sonunda bu dosyayı
+# geri commit eder (bkz. .github/workflows/publish.yml).
+data/*/*.db
+!data/*/content_factory.db
