@@ -128,10 +128,18 @@ class PipelineOrchestrator:
         state.step_history.append("research")
         research = self.agents.research(topic)
         state.research = research
+        self.logger.info(
+            f"research: {len(research.key_facts)} bulgu, "
+            f"{len(research.sources_used)} kaynak, açı={research.suggested_angle[:60]!r}"
+        )
 
         state.step_history.append("strategist")
         brief = self.agents.strategist(StrategistInput(topic=topic, research=research))
         state.brief = brief
+        self.logger.info(
+            f"strategist: başlık={brief.title!r} hedef_kelime={brief.target_keyword!r} "
+            f"{len(brief.outline)} bölüm, hedef ~{brief.target_word_count} kelime"
+        )
 
         # Görsel bir kez üretilir ve retry döngüsü boyunca yeniden kullanılır.
         article, link_plan = self._draft_cycle(state, brief, research, feedback=None)
@@ -155,6 +163,10 @@ class PipelineOrchestrator:
             PublisherInput(article=article, link_plan=link_plan)
         )
         state.article = publisher_output.article
+        target_root = self.context.settings.target_repo_path()
+        self.logger.info(f"publisher: {len(publisher_output.written_paths)} dosya yazıldı")
+        for written in publisher_output.written_paths:
+            self.logger.info(f"  -> {target_root}/{written}")
 
         if not self.publish:
             self.logger.warning(
@@ -175,6 +187,10 @@ class PipelineOrchestrator:
         en yüksek skorlu onaylı aday seçilir (TopicScout adayları skora göre sıralı döndürür)."""
         state.step_history.append("topic_scout")
         candidates = self.agents.topic_scout(TopicScoutRequest())
+        self.logger.info(
+            f"topic_scout: {len(candidates)} aday konu -> "
+            f"{[candidate.title for candidate in candidates]}"
+        )
 
         if self.scope_guard is None:
             approved = candidates
@@ -192,7 +208,13 @@ class PipelineOrchestrator:
 
         if not approved:
             raise PipelineError("topic_scout: kapsam onaylı aday konu üretilemedi")
-        return approved[0]
+
+        selected = approved[0]
+        self.logger.info(
+            f"scope_guard: {len(approved)}/{len(candidates)} aday kapsamda — "
+            f"seçilen: {selected.title!r} (grup={selected.category}, skor={selected.score})"
+        )
+        return selected
 
     def _draft_cycle(
         self, state: RunState, brief: Brief, research: ResearchNotes, *, feedback: str | None
@@ -203,12 +225,23 @@ class PipelineOrchestrator:
         article = self.agents.writer(
             WriterInput(brief=brief, research=research, feedback=feedback)
         )
+        self.logger.info(f"writer: {len(article.body_markdown.split())} kelime yazıldı")
 
         state.step_history.append("seo_optimizer")
         article = self.agents.seo_optimizer(article)
+        if article.seo is not None:
+            self.logger.info(
+                f"seo_optimizer: slug={article.seo.slug!r} "
+                f"meta_title={article.seo.meta_title!r} "
+                f"({len(article.secondary_keywords)} ikincil kelime)"
+            )
 
         state.step_history.append("linker")
         linker_output = self.agents.linker(article)
+        self.logger.info(
+            f"linker: {len(linker_output.link_plan.new_article_body_links)} gövde linki, "
+            f"{len(linker_output.link_plan.related_articles_updates)} eski makale güncellenecek"
+        )
 
         state.article = linker_output.article
         state.link_plan = linker_output.link_plan
@@ -248,6 +281,11 @@ class PipelineOrchestrator:
             state.step_history.append("editor")
             report = self.agents.editor(
                 EditorInput(article=article, link_plan=link_plan, retry_count=attempt)
+            )
+            self.logger.info(
+                f"editor: karar={report.decision.value} kapsam={report.scope_decision.value} "
+                f"(deneme {attempt + 1}/{max_retries + 1})"
+                + (f" gerekçeler={report.reasons}" if report.reasons else "")
             )
             if report.decision is QADecision.APPROVED or attempt == max_retries:
                 return report

@@ -4,12 +4,15 @@ import pytest
 
 from content_factory.providers.llm.exceptions import UnknownProviderError
 from content_factory.providers.llm.factory import (
+    AgentScopedLLMProvider,
     available_providers,
+    create_agent_scoped_llm_provider,
     create_default_llm_provider,
     create_llm_provider,
     create_llm_provider_for_agent,
     register_provider,
 )
+from content_factory.providers.llm.groq import GroqProvider
 from content_factory.providers.llm.openrouter import OpenRouterProvider
 from content_factory.settings.loader import Settings
 
@@ -31,7 +34,7 @@ def test_create_llm_provider_unknown_name_raises() -> None:
 
 def test_create_llm_provider_for_agent_uses_models_yaml_routing(settings: Settings) -> None:
     provider = create_llm_provider_for_agent(settings, "topic_scout")
-    assert isinstance(provider, OpenRouterProvider)  # config/models.yaml: default_provider
+    assert isinstance(provider, GroqProvider)
     provider.close()
 
 
@@ -46,6 +49,16 @@ def test_create_llm_provider_for_agent_reads_timeout_and_retries_from_engine_yam
 def test_create_default_llm_provider_uses_models_default_provider(settings: Settings) -> None:
     provider = create_default_llm_provider(settings)
     assert provider.name == settings.models.default_provider
+    provider.close()
+
+
+def test_create_agent_scoped_llm_provider_uses_agent_specific_provider(settings: Settings) -> None:
+    provider = create_agent_scoped_llm_provider(settings)
+    assert isinstance(provider, AgentScopedLLMProvider)
+    assert isinstance(provider.provider_for("writer"), GroqProvider)
+    assert isinstance(provider.provider_for("topic_scout"), GroqProvider)
+    # `image_generator` config'i LLM sağlayıcı tarafından kullanılmaz.
+    assert "image_generator" not in provider._providers
     provider.close()
 
 

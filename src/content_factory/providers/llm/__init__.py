@@ -25,6 +25,7 @@ from content_factory.providers.llm.models import (
     LLMStreamChunk,
     TokenUsage,
 )
+from content_factory.providers.llm.groq import GroqProvider
 from content_factory.providers.llm.openrouter import OpenRouterProvider
 from content_factory.providers.llm.rate_limit import RateLimitState, parse_retry_after
 from content_factory.providers.llm.retry import RetryPolicy, retry_call
@@ -47,6 +48,7 @@ __all__ = [
     "LLMResponse",
     "LLMStreamChunk",
     "LLMTimeoutError",
+    "GroqProvider",
     "OpenRouterProvider",
     "RateLimitState",
     "RetryPolicy",

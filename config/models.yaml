@@ -13,35 +13,37 @@ default_provider: openrouter
 # maliyet/kalite testlerine göre Faz 1'de ayarlanacak).
 agents:
   topic_scout:
-    model: google/gemini-2.5-flash
+    provider: groq
+    model: openai/gpt-oss-120b
     temperature: 0.6
     max_tokens: 4000
-    fallback_models: [anthropic/claude-sonnet-5]
+    fallback_models: [ ]
 
   research:
-    model: google/gemini-2.5-flash
+    model: openai/gpt-oss-20b:free
     temperature: 0.2
     max_tokens: 3000
     # Düşük temperature: burası spekülasyon değil, verilen referans bilgiyi özetleme işi.
 
   strategist:
-    model: anthropic/claude-sonnet-5
+    model: openai/gpt-oss-20b:free
     temperature: 0.4
     max_tokens: 2000
 
   writer:
-    model: anthropic/claude-sonnet-5
-    temperature: 0.7
-    max_tokens: 8000
-    fallback_models: [openai/gpt-5]
+    provider: groq
+    model: openai/gpt-oss-120b
+    fallback_models: []   # openai/gpt-5 fallback'i de bakiye gerektirdiği için kaldırıldı
+    # Groq model seçimi yazma ajanını doğrudan bu sağlığa yönlendirir.
+    max_tokens: 4000
 
   seo_optimizer:
-    model: google/gemini-2.5-flash
+    model: openai/gpt-oss-20b:free
     temperature: 0.3
     max_tokens: 3000
 
   linker:
-    model: anthropic/claude-sonnet-5
+    model: openai/gpt-oss-20b:free
     temperature: 0.3
     max_tokens: 3000
 
@@ -69,7 +71,7 @@ agents:
     # Desteklenen parametreler: https://openrouter.ai/api/v1/images/models
 
   editor:
-    model: openai/gpt-5
+    model: openai/gpt-oss-20b:free
     temperature: 0.2
     max_tokens: 3000
     # Bu agent zorunlu geçittir (ARCHITECTURE.md §3) — farklı bir sağlayıcı kullanmak
@@ -78,6 +80,6 @@ agents:
   scope_guard:
     # ScopeGuard.post_check burayı kullanır (bkz. guards/scope_guard.py). EditorAgent'ın
     # kendi modelinden bağımsız, ucuz/hızlı bir sınıflandırma modeli yeterlidir.
-    model: google/gemini-2.5-flash
+    model: openai/gpt-oss-20b:free
     temperature: 0.0
     max_tokens: 300

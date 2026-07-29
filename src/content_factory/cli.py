@@ -14,11 +14,14 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import logging
 import sys
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 from dotenv import load_dotenv
+from content_factory.utils.paths import project_root
 
 from content_factory.agents.base import AgentContext
 from content_factory.agents.editor import EditorAgent
@@ -38,7 +41,7 @@ from content_factory.integrations.image_client import create_image_provider
 from content_factory.knowledge.loader import KnowledgeLoader
 from content_factory.orchestrator import PipelineAgents, PipelineOrchestrator
 from content_factory.prompts.loader import PromptLoader
-from content_factory.providers.llm import create_default_llm_provider
+from content_factory.providers.llm.factory import create_agent_scoped_llm_provider
 from content_factory.settings.loader import Settings
 from content_factory.state.sqlite_store import SQLiteStateStore
 from content_factory.utils.logging import configure_logging, get_logger
@@ -72,9 +75,9 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_arg_parser().parse_args(argv)
     run_id = args.run_id or _new_run_id()
 
-    # API anahtarları .env'den okunur; zaten tanımlı bir çevre değişkeni ezilmez
-    # (CI/CD'de secret'lar çevre değişkeni olarak gelir, .env yoktur).
-    load_dotenv(override=False)
+    # API anahtarları proje kökündeki .env dosyasından okunur; zaten tanımlı
+    # bir çevre değişkeni ezilmez. Bu, current working dir'e bağlı aramayı önler.
+    load_dotenv(project_root() / ".env", override=False)
 
     settings = Settings.load(args.brand)
     if args.target_repo:
@@ -104,10 +107,9 @@ def main(argv: list[str] | None = None) -> int:
         logger.info("knowledge base henüz placeholder içeriyor (Faz 0 tamamlanmadı)")
     knowledge = knowledge_loader.load(args.brand)
 
-    # Tüm agent'lar aynı, tek LLM provider instance'ını paylaşır (bkz.
-    # providers/llm/README.md) — hangi sağlayıcının kullanılacağı tamamen
-    # config/models.yaml'dandır, burada hiçbir sağlayıcı adı hardcode edilmez.
-    llm_provider = create_default_llm_provider(settings)
+    # Tüm agent'lar için agent bazlı sağlayıcı seçimi destekler. `brands/{brand}/models.yaml`
+    # içindeki `provider:` override'ları artık tek bir wrapper üzerinden çalışır.
+    llm_provider = create_agent_scoped_llm_provider(settings)
 
     # Görsel sağlayıcı da aynı ilkeyle kurulur: hangi sağlayıcı/model kullanılacağı
     # config/models.yaml: agents.image_generator'dan gelir. Temel görsel run dizinine
@@ -148,11 +150,7 @@ def main(argv: list[str] | None = None) -> int:
     result = orchestrator.run()
 
     logger.info(f"pipeline bitti status={result.status.value} adımlar={result.step_history}")
-    if result.publish_result is not None:
-        logger.info(
-            f"yayın: {result.publish_result.file_path} "
-            f"commit={result.publish_result.commit_sha} pr={result.publish_result.pr_url}"
-        )
+    _log_summary(logger, result, settings=settings, log_dir=log_dir)
     if result.error:
         logger.error(f"hata: {result.error}")
     llm_provider.close()
@@ -160,6 +158,15 @@ def main(argv: list[str] | None = None) -> int:
     state_store.close()
 
     return 0 if result.status == RunStatus.COMPLETED else 1
+
+
+def _log_summary(logger: logging.Logger, result, settings: Settings, log_dir: Path) -> None:
+    logger.info(f"run log: {log_dir / 'run.log'}")
+    if result.status != RunStatus.COMPLETED:
+        logger.warning(
+            "pipeline doğru tamamlanmadı; durum=%s. Logu kontrol edin veya yeniden çalıştırın.",
+            result.status.value,
+        )
 
 
 if __name__ == "__main__":

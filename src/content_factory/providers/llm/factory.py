@@ -16,6 +16,8 @@ import os
 from content_factory.providers.llm.base import BaseLLMProvider
 from content_factory.providers.llm.cache import LLMCache
 from content_factory.providers.llm.exceptions import UnknownProviderError
+from content_factory.providers.llm.groq import GroqProvider
+from content_factory.providers.llm.models import LLMRequest, LLMResponse, LLMStreamChunk
 from content_factory.providers.llm.openrouter import OpenRouterProvider
 from content_factory.providers.llm.retry import RetryPolicy
 from content_factory.settings.loader import Settings
@@ -96,4 +98,83 @@ def create_default_llm_provider(
     )
 
 
+class AgentScopedLLMProvider(BaseLLMProvider):
+    name = "agent_scoped"
+    default_api_key_env = "OPENROUTER_API_KEY"
+
+    def __init__(
+        self,
+        providers: dict[str, BaseLLMProvider],
+        default_provider: BaseLLMProvider,
+    ) -> None:
+        super().__init__()
+        self._providers = providers
+        self._default_provider = default_provider
+
+    def generate(self, request: LLMRequest, *, agent_name: str, run_id: str) -> LLMResponse:
+        provider = self._providers.get(agent_name, self._default_provider)
+        return provider.generate(request, agent_name=agent_name, run_id=run_id)
+
+    def _do_generate(self, request: LLMRequest, *, model: str) -> LLMResponse:
+        raise NotImplementedError("AgentScopedLLMProvider does not implement _do_generate")
+
+    def stream(self, request: LLMRequest, *, agent_name: str, run_id: str) -> Iterator[LLMStreamChunk]:
+        provider = self._providers.get(agent_name, self._default_provider)
+        yield from provider.stream(request, agent_name=agent_name, run_id=run_id)
+
+    def health_check(self) -> bool:
+        return all(provider.health_check() for provider in self._providers.values())
+
+    def close(self) -> None:
+        closed = set()
+        for provider in self._providers.values():
+            if provider not in closed:
+                provider.close()
+                closed.add(provider)
+        if self._default_provider not in closed:
+            self._default_provider.close()
+
+    def provider_for(self, agent_name: str) -> BaseLLMProvider:
+        return self._providers.get(agent_name, self._default_provider)
+
+
+def create_agent_scoped_llm_provider(
+    settings: Settings, *, cache: LLMCache | None = None
+) -> BaseLLMProvider:
+    """Agent başına uygun sağlayıcıyı seçip tek bir wrapper provider içinde paketler."""
+    provider_instances: dict[str, BaseLLMProvider] = {}
+    agent_providers: dict[str, BaseLLMProvider] = {}
+
+    # `image_generator` için konfigürasyon LLM provider yerine özel bir ImageProvider kullanır.
+    non_llm_agents = {"image_generator"}
+
+    for agent_name in settings.models.agents:
+        if agent_name in non_llm_agents:
+            continue
+
+        agent_cfg = settings.models.for_agent(agent_name)
+        provider_name = agent_cfg.provider or settings.models.default_provider
+        if provider_name not in provider_instances:
+            provider_instances[provider_name] = _build_from_settings(
+                provider_name,
+                timeout_seconds=float(settings.engine.timeouts.llm_call_seconds),
+                max_retries=settings.engine.retries.llm_call_max_retries,
+                cache=cache,
+            )
+        agent_providers[agent_name] = provider_instances[provider_name]
+
+    default_provider = provider_instances.get(
+        settings.models.default_provider,
+        _build_from_settings(
+            settings.models.default_provider,
+            timeout_seconds=float(settings.engine.timeouts.llm_call_seconds),
+            max_retries=settings.engine.retries.llm_call_max_retries,
+            cache=cache,
+        ),
+    )
+    return AgentScopedLLMProvider(agent_providers, default_provider)
+
+
 register_provider("openrouter", OpenRouterProvider)
+register_provider("groq", GroqProvider)
+register_provider("groq", GroqProvider)
