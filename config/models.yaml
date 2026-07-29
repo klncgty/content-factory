@@ -46,23 +46,26 @@ agents:
     max_tokens: 3000
 
   image_generator:
-    # Görsel üretimi OpenRouter'da ayrı bir endpoint kullanır (POST /api/v1/images), bu yüzden
-    # ImageProvider LLMProvider'dan ayrı bir arayüzdür (bkz. ARCHITECTURE.md §4,
-    # integrations/image_client.py).
-    provider: openrouter   # veya: google-imagen | openai-images | replicate-flux
-    model: google/gemini-2.5-flash-image
+    # Görsel üretimi metin tamamlamadan ayrı bir endpoint kullanır, bu yüzden ImageProvider
+    # LLMProvider'dan ayrı bir arayüzdür (bkz. ARCHITECTURE.md §4, integrations/image_client.py).
+    #
+    # google-ai-studio: Gemini API'ye DOĞRUDAN bağlanır (GEMINI_API_KEY), OpenRouter aracı
+    # olmadan. Ücretsiz kotadan yararlanabilmek için tercih edilir.
+    provider: google-ai-studio   # veya: openrouter | replicate-flux
+    model: gemini-2.5-flash-image
     images_per_article: 1  # tek temel görsel üretilir, 3 türev (cover/thumbnail/og) resize ile çıkarılır
 
     # En büyük türev 1600x900 (cover) olduğu için temel görsel de 16:9 istenir — böylece
     # image_processing yalnızca küçültme yapar, en-boy oranı kırpması gerekmez.
+    # Gemini API'de generationConfig.imageConfig.aspectRatio olarak gönderilir.
     aspect_ratio: "16:9"
 
-    # resolution: "2K"
-    # KAPALI: google/gemini-2.5-flash-image bu parametreyi DESTEKLEMEZ (gönderilirse 400 döner).
-    # Yalnızca resolution destekleyen bir modele geçilirse açılmalıdır — ör.
-    # google/gemini-3.1-flash-image (2K çıktı, ~2x output token maliyeti). Bu modelin 16:9
-    # çıktısı 1600x900'ün altında kaldığından cover türevi bir miktar büyütülerek üretilir;
-    # keskinlik öncelikliyse 3.1 + resolution: "2K" tercih edilmelidir.
+    # resolution: YALNIZCA openrouter sağlayıcısında ve yalnızca destekleyen modellerde
+    # anlamlıdır (ör. google/gemini-3.1-flash-image). gemini-2.5-flash-image DESTEKLEMEZ.
+    #
+    # OpenRouter'a geri dönmek için:
+    #   provider: openrouter
+    #   model: google/gemini-2.5-flash-image      # OpenRouter "saglayici/model" biçimi ister
     # Desteklenen parametreler: https://openrouter.ai/api/v1/images/models
 
   editor:

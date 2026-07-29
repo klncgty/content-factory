@@ -327,19 +327,29 @@ sağlayıcı (ör. doğrudan OpenAI, Ollama) eklemek `BaseLLMProvider`'ı implem
 kodu değişmez.
 
 **Görsel üretimi ayrı arayüz:** `ImageProvider` (`providers/image.py`), LLM katmanından
-bağımsızdır: OpenRouter'da görsel üretimi `POST /api/v1/images` ile **ayrı bir endpoint**
-ve ayrı bir istek/yanıt sözleşmesi kullanır, dolayısıyla `BaseLLMProvider`'ın
-retry/cache/token-sayımı katmanları buraya uymaz. Somut implementasyon
-`integrations/image_client.py: OpenRouterImageProvider`'dır.
-`config/models.yaml: agents.image_generator` kendi `provider`/`model` alanlarına
-sahiptir ve `register_image_provider(...)` ile başka bir sağlayıcıya
-(Imagen/DALL·E/Flux/vb.) geçilebilir — agent kodu değişmez.
+bağımsızdır: görsel üretimi her iki sağlayıcıda da **ayrı bir endpoint** ve ayrı bir
+istek/yanıt sözleşmesi kullanır, dolayısıyla `BaseLLMProvider`'ın retry/cache/token-sayımı
+katmanları buraya uymaz. İki somut implementasyon `integrations/image_client.py`'dedir:
 
-Desteklenen istek parametreleri modele göre değişir (ör. `google/gemini-2.5-flash-image`
-`aspect_ratio` destekler ama `resolution` desteklemez), bu yüzden `aspect_ratio` ve
-`resolution` opsiyoneldir ve yalnızca config'de tanımlıysa gönderilir. Görsel üretimi
-başarısız olduğunda (`ImageProviderError`) Orchestrator hatayı yutar ve makale görselsiz
-yayınlanır — görsel bir zenginleştirmedir, yayın önkoşulu değildir.
+| Sağlayıcı | Endpoint | Görselin yanıttaki yeri | Anahtar |
+|---|---|---|---|
+| `google-ai-studio` (varsayılan) | `POST /v1beta/models/{model}:generateContent` | `candidates[0].content.parts[].inlineData.data` | `GEMINI_API_KEY` |
+| `openrouter` | `POST /api/v1/images` | `data[0].b64_json` | `IMAGE_API_KEY` → `OPENROUTER_API_KEY` |
+
+Sağlayıcı değişimi tek bir config alanıdır (`agents.image_generator.provider`); agent
+kodu değişmez, `register_image_provider(...)` ile üçüncü bir sağlayıcı eklenebilir.
+Model adı biçimi farklıdır (OpenRouter `saglayici/model` ister, Gemini API çıplak ad) —
+Google sağlayıcısı yanlışlıkla bırakılmış `google/` önekini temizler.
+
+Google tarafında anahtar **query parametresiyle** (`?key=`) gönderilir: Google'ın yeni
+`AQ.`-önekli anahtar formatı `x-goog-api-key` başlığıyla bu endpoint'te
+`403 PERMISSION_DENIED` döndürüyor, query parametresi ise her iki formatla da çalışıyor.
+
+Desteklenen istek parametreleri modele göre değişir (ör. OpenRouter'da
+`google/gemini-2.5-flash-image` `aspect_ratio` destekler ama `resolution` desteklemez),
+bu yüzden `aspect_ratio`/`resolution` opsiyoneldir ve yalnızca config'de tanımlıysa
+gönderilir. Görsel üretimi başarısız olduğunda (`ImageProviderError`) Orchestrator hatayı
+yutar ve makale görselsiz yayınlanır — görsel bir zenginleştirmedir, yayın önkoşulu değildir.
 
 **Dayanıklılık:** `fallback_models` (bkz. `config/models.yaml`) — birincil model
 (rate limit, timeout veya sunucu hatası ile) başarısız olursa `BaseLLMProvider.generate()`
@@ -449,7 +459,7 @@ content-factory/
 │   │   └── git.py                    # GitProvider (soyut)
 │   ├── integrations/
 │   │   ├── git_ops.py               # LocalGitProvider (git/gh subprocess)
-│   │   ├── image_client.py           # OpenRouterImageProvider (POST /api/v1/images) + factory
+│   │   ├── image_client.py           # GoogleAIStudioImageProvider + OpenRouterImageProvider + factory
 │   │   └── image_processing.py       # tek görselden cover/thumbnail/og türevleri (Pillow)
 │   └── utils/
 │       ├── logging.py             # ortak, run_id etiketli logger

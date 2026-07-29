@@ -51,11 +51,16 @@ bağımlılıkları tanımlar. Her faz bir öncekinin çalışır durumda olmas�
 - [x] Yayın sonrası kalıcılaştırma: `record_article` / `record_keyword_usage` /
       `record_internal_link` yalnızca git adımı başarılı olduktan sonra
 - [x] CLI: `PromptLoader` + `LocalGitProvider` bağlandı, `--dry-run` eklendi
-- [x] **Somut `ImageProvider` implementasyonu**: `OpenRouterImageProvider`
-      (`integrations/image_client.py`, `POST /api/v1/images`) + `create_image_provider`
-      factory + CLI kablolaması. `aspect_ratio`/`resolution` modele göre opsiyonel
-      gönderilir; hata durumunda (`ImageProviderError`) Orchestrator makaleyi görselsiz
-      yayınlar. 30 test (`tests/integrations/test_image_client.py`).
+- [x] **Somut `ImageProvider` implementasyonu**: `GoogleAIStudioImageProvider` (varsayılan,
+      Gemini API `:generateContent`) ve `OpenRouterImageProvider` (`POST /api/v1/images`) —
+      ikisi de `integrations/image_client.py`'de + `create_image_provider` factory + CLI
+      kablolaması. Sağlayıcı geçişi tek config alanı. Hata durumunda (`ImageProviderError`)
+      Orchestrator makaleyi görselsiz yayınlar. 49 test.
+- [ ] **Gemini görsel kotasının açılması (blocker):** anahtar geçerli ve metin modellerinde
+      ücretsiz kota çalışıyor, ancak tüm görsel modelleri `limit: 0` ile
+      `429 RESOURCE_EXHAUSTED` dönüyor — görsel üretimi Google tarafında faturalandırma
+      gerektiriyor görünüyor. Çözülene kadar makaleler görselsiz yayınlanır (pipeline durmaz).
+      Alternatif: `provider: openrouter` (ücretli ama çalışır durumda doğrulandı).
 - [ ] `GitAgent`: `publish_strategy: pr-then-automerge` ile gerçek bir PR üzerinde doğrulama
 - [ ] İlk 5-10 makale bu modda üretilip kalite + kapsam uyumu doğrulanır
 

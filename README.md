@@ -52,14 +52,22 @@ ile kapanır ve hiçbir şey yayınlanmaz. Yayın kayıtları (`articles`, `keyw
 
 **Durum:** pipeline uçtan uca kablolanmış durumda. Knowledge Base'in 16 dosyası gerçek
 içerikle dolduruldu (`KnowledgeLoader.validate("oleart")` artık placeholder raporlamıyor)
-ve görsel üretimi `OpenRouterImageProvider` ile devrede
-(`integrations/image_client.py`, OpenRouter `POST /api/v1/images`). Görsel üretimi
-başarısız olursa makale görselsiz yayınlanır — pipeline durmaz. oleart.co tarafındaki
-yayın sözleşmesi bağımlılığı da tamamlandı (`scripts/build-blog.mjs`).
+ve görsel üretimi kablolandı: varsayılan sağlayıcı **Google AI Studio (Gemini API)**,
+alternatif olarak OpenRouter — ikisi de `integrations/image_client.py`'de, geçiş tek bir
+config alanıyla (`agents.image_generator.provider`). Görsel üretimi başarısız olursa
+makale görselsiz yayınlanır, pipeline durmaz. oleart.co tarafındaki yayın sözleşmesi
+bağımlılığı da tamamlandı (`scripts/build-blog.mjs`).
 
-**Kalan işler:** `pr-then-automerge` stratejisinin gerçek bir PR üzerinde doğrulanması,
-`brand.yaml` yasaklı ifade listesinin hukuki gözden geçirmesi ve ilk 5-10 makalenin
-kalite/maliyet doğrulaması — bkz. `ROADMAP.md`.
+> **Dikkat — görsel kotası:** Gemini API'de görsel modelleri (`gemini-2.5-flash-image` ve
+> tüm `*-image` türevleri) mevcut anahtarda `limit: 0` ile `429 RESOURCE_EXHAUSTED`
+> dönüyor; ücretsiz kota metin modellerinde çalışıyor ama **görselde açık değil**. Bu
+> çözülene kadar makaleler görselsiz yayınlanır. Alternatif: projede faturalandırmayı
+> etkinleştirmek veya `provider: openrouter`'a dönmek (orada görsel üretimi ücretli ama
+> çalışıyor).
+
+**Kalan işler:** görsel kotasının açılması, `pr-then-automerge` stratejisinin gerçek bir
+PR üzerinde doğrulanması, `brand.yaml` yasaklı ifade listesinin hukuki gözden geçirmesi
+ve ilk 5-10 makalenin kalite/maliyet doğrulaması — bkz. `ROADMAP.md`.
 
 ## Kurulum
 
