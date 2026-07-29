@@ -21,7 +21,6 @@ from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
-from content_factory.utils.paths import project_root
 
 from content_factory.agents.base import AgentContext
 from content_factory.agents.editor import EditorAgent
@@ -45,6 +44,7 @@ from content_factory.providers.llm.factory import create_agent_scoped_llm_provid
 from content_factory.settings.loader import Settings
 from content_factory.state.sqlite_store import SQLiteStateStore
 from content_factory.utils.logging import configure_logging, get_logger
+from content_factory.utils.paths import project_root
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:

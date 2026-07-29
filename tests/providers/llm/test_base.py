@@ -127,6 +127,25 @@ def test_waits_out_rate_limit_when_budget_allows_then_succeeds() -> None:
     assert slept and 20.0 <= slept[0] <= 21.0
 
 
+def test_waits_default_duration_when_provider_reports_no_retry_after() -> None:
+    """Groq 429'u `retry-after` göndermiyor: süre bilinmediğinde hiç beklememek,
+    dakikalık kotanın dolduğu anda run'ı tamamen kaybetmek demekti."""
+    from content_factory.providers.llm.base import DEFAULT_UNKNOWN_RATE_LIMIT_WAIT_SECONDS
+
+    slept: list[float] = []
+    provider = FakeLLMProvider(
+        side_effects={"model-a": [LLMRateLimitError("429, süre yok")]},  # retry_after=None
+        retry_policy=_fast_policy(),
+        sleep_fn=slept.append,
+        max_rate_limit_wait_seconds=90.0,
+    )
+
+    response = provider.generate(_request(), agent_name="research", run_id="run-1")
+
+    assert response.content == "ok:model-a"
+    assert slept and slept[0] >= DEFAULT_UNKNOWN_RATE_LIMIT_WAIT_SECONDS
+
+
 def test_does_not_wait_when_rate_limit_exceeds_budget() -> None:
     slept: list[float] = []
     provider = FakeLLMProvider(

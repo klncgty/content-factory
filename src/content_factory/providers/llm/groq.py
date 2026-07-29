@@ -7,11 +7,9 @@ seçtiğinde devreye girer.
 
 from __future__ import annotations
 
-import json
 import os
 import re
 from collections.abc import Iterator
-from pathlib import Path
 
 import httpx
 
@@ -25,9 +23,14 @@ from content_factory.providers.llm.exceptions import (
     LLMRequestTooLargeError,
     LLMTimeoutError,
 )
-from content_factory.providers.llm.models import LLMMessage, LLMRequest, LLMResponse, LLMStreamChunk, TokenUsage
+from content_factory.providers.llm.models import (
+    LLMMessage,
+    LLMRequest,
+    LLMResponse,
+    LLMStreamChunk,
+    TokenUsage,
+)
 from content_factory.providers.llm.rate_limit import parse_groq_duration, parse_retry_after
-
 
 DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
 
@@ -61,7 +64,7 @@ class GroqProvider(BaseLLMProvider):
         else:
             headers = {
                 "Content-Type": "application/json",
-                "User-Agent": f"content-factory/1.0",
+                "User-Agent": "content-factory/1.0",
                 "X-Title": app_title,
             }
             if self._api_key:
@@ -135,7 +138,9 @@ class GroqProvider(BaseLLMProvider):
             finish_reason=finish_reason,
         )
 
-    def stream(self, request: LLMRequest, *, agent_name: str, run_id: str) -> Iterator[LLMStreamChunk]:
+    def stream(
+        self, request: LLMRequest, *, agent_name: str, run_id: str
+    ) -> Iterator[LLMStreamChunk]:
         response = self._do_generate(request, model=request.model)
         yield LLMStreamChunk(delta=response.content, finish_reason=response.finish_reason)
 
@@ -191,7 +196,9 @@ class GroqProvider(BaseLLMProvider):
         try:
             response = self._client.post("/chat/completions", json=payload)
         except httpx.TimeoutException as exc:
-            raise LLMTimeoutError(f"Groq isteği zaman aşımına uğradı (model={payload.get('model')})") from exc
+            raise LLMTimeoutError(
+                f"Groq isteği zaman aşımına uğradı (model={payload.get('model')})"
+            ) from exc
         except httpx.ConnectError as exc:
             raise LLMProviderUnavailableError(f"Groq'a bağlanılamadı: {exc}") from exc
         self._raise_for_status(response)
@@ -206,8 +213,17 @@ class GroqProvider(BaseLLMProvider):
                 f"Groq bakiyesi veya izinleri yetersiz (status={status})"
             )
         if status == 429:
+            # Gövde ve rate-limit başlıkları mesaja KATILIR: sınırın hangisi olduğu
+            # (dakikalık token / günlük istek), limitin ve kullanımın ne olduğu yalnızca
+            # orada yazıyor. Bunlar olmadan uzak bir ortamdaki (CI) 429'u teşhis etmek
+            # imkânsızdı — yalnızca "rate limit" görünüyordu.
+            limits = " ".join(
+                f"{key}={value}"
+                for key, value in response.headers.items()
+                if key.lower().startswith("x-ratelimit")
+            )
             raise LLMRateLimitError(
-                f"Groq rate limit (status={status})",
+                f"Groq rate limit (status={status}): {response.text[:400]} [{limits}]",
                 retry_after=self._retry_after_seconds(response),
             )
         if status == 413:

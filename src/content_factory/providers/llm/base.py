@@ -30,6 +30,14 @@ from content_factory.providers.llm.retry import RetryPolicy, retry_call
 from content_factory.providers.llm.token_counter import HeuristicTokenCounter, TokenCounter
 from content_factory.utils.logging import get_logger
 
+DEFAULT_UNKNOWN_RATE_LIMIT_WAIT_SECONDS = 20.0
+"""Sağlayıcı 429 ile birlikte bir bekleme süresi bildirmediğinde varsayılan süre.
+
+Groq 429'larında `retry-after` başlığı gelmiyor ve token kovası boşsa `x-ratelimit-reset`
+de anlamlı bir değer taşımıyor. Süre bilinmediğinde hiç beklememek, dakikalık kotanın
+dolduğu bir anda run'ı tamamen kaybetmek demekti; 20 saniye çoğu dakikalık kotanın
+yenilenmesine yetiyor ve bilinmeyen bir sınırda boşa uzun bekleme yapmıyor."""
+
 
 class BaseLLMProvider(ABC):
     name: str
@@ -173,8 +181,16 @@ class BaseLLMProvider(ABC):
                     ),
                 )
             except LLMRateLimitError as exc:
-                if exc.retry_after is not None:
-                    self._rate_limits.mark_rate_limited(model, exc.retry_after)
+                # Sağlayıcı süre bildirmediyse varsayılan bir bekleme uygulanır: aksi
+                # halde `_rate_limit_wait` bekleyecek bir süre bulamayıp run'ı anında
+                # öldürüyordu (gözlemlenen: Groq 429'u retry-after başlığı göndermiyor,
+                # zamanlanmış run ilk dakikada düşüyordu).
+                retry_after = (
+                    exc.retry_after
+                    if exc.retry_after is not None
+                    else DEFAULT_UNKNOWN_RATE_LIMIT_WAIT_SECONDS
+                )
+                self._rate_limits.mark_rate_limited(model, retry_after)
                 last_error = exc
                 self._logger.warning(
                     f"rate_limited agent={agent_name} run_id={run_id} model={model} "

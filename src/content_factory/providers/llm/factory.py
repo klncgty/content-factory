@@ -12,6 +12,7 @@ agent kodu değişmez (bkz. `providers/llm/README.md`).
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 
 from content_factory.providers.llm.base import BaseLLMProvider
 from content_factory.providers.llm.cache import LLMCache
@@ -123,7 +124,9 @@ class AgentScopedLLMProvider(BaseLLMProvider):
     def _do_generate(self, request: LLMRequest, *, model: str) -> LLMResponse:
         raise NotImplementedError("AgentScopedLLMProvider does not implement _do_generate")
 
-    def stream(self, request: LLMRequest, *, agent_name: str, run_id: str) -> Iterator[LLMStreamChunk]:
+    def stream(
+        self, request: LLMRequest, *, agent_name: str, run_id: str
+    ) -> Iterator[LLMStreamChunk]:
         provider = self._providers.get(agent_name, self._default_provider)
         yield from provider.stream(request, agent_name=agent_name, run_id=run_id)
 
