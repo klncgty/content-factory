@@ -81,7 +81,7 @@ class OpenRouterProvider(BaseLLMProvider):
         usage_data = data.get("usage") or {}
 
         return LLMResponse(
-            content=choice["message"]["content"],
+            content=self._extract_content(choice, model=model),
             model=data.get("model", model),
             provider=self.name,
             usage=TokenUsage(
@@ -142,6 +142,35 @@ class OpenRouterProvider(BaseLLMProvider):
             return False
 
     # ------------------------------------------------------------------------------ dahili
+
+    @staticmethod
+    def _extract_content(choice: dict[str, object], *, model: str) -> str:
+        """`message.content`'i güvenli biçimde çıkarır.
+
+        200 OK dönen bir yanıtta bile içerik boş olabilir: reasoning modelleri (ör.
+        `openai/gpt-oss-20b`) `max_tokens` bütçesini düşünme adımında tüketirse
+        `finish_reason="length"` ile `content: null` döner. Bu, ham `None`'ın
+        `LLMResponse`'a verilip pydantic `ValidationError`'ı olarak — yani retry/fallback
+        mekanizmasının hiç görmediği, pipeline'ı durduran bir hata olarak — patlamasına
+        yol açıyordu. Geçici kabul edip `LLMProviderUnavailableError` fırlatıyoruz:
+        `base.generate()` bunu retry eder, tükenirse sıradaki fallback modele geçer.
+        """
+        message = choice.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, str) and content.strip():
+            return content
+
+        finish_reason = choice.get("finish_reason")
+        hint = ""
+        if finish_reason == "length":
+            hint = (
+                " — model token bütçesini yanıt üretmeden tüketti; "
+                "config/models.yaml'da bu agent için max_tokens'ı artırın veya "
+                "reasoning yapmayan bir model seçin"
+            )
+        raise LLMProviderUnavailableError(
+            f"OpenRouter boş içerik döndürdü (model={model}, finish_reason={finish_reason}){hint}"
+        )
 
     def _require_api_key(self) -> None:
         if not self._api_key:

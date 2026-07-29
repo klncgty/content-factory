@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from content_factory.providers.llm.rate_limit import RateLimitState, parse_retry_after
 
 
@@ -78,3 +80,15 @@ def test_parse_retry_after_http_date_format() -> None:
 
 def test_parse_retry_after_invalid_value_returns_none() -> None:
     assert parse_retry_after("not-a-valid-value") is None
+
+
+def test_parse_groq_duration_handles_compound_and_units() -> None:
+    """Groq'un `x-ratelimit-reset-*` başlıkları standart değildir: "18.285s", "4m19.2s",
+    "250ms" gibi değerler gelir."""
+    from content_factory.providers.llm.rate_limit import parse_groq_duration
+
+    assert parse_groq_duration("18.285s") == pytest.approx(18.285)
+    assert parse_groq_duration("4m19.2s") == pytest.approx(259.2)
+    assert parse_groq_duration("250ms") == pytest.approx(0.25)
+    assert parse_groq_duration(None) is None
+    assert parse_groq_duration("bilinmeyen") is None

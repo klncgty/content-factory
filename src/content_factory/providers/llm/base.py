@@ -48,8 +48,14 @@ class BaseLLMProvider(ABC):
         token_counter: TokenCounter | None = None,
         sleep_fn: Callable[[float], None] = time.sleep,
         log_prompts: bool = False,
+        max_rate_limit_wait_seconds: float = 0.0,
     ) -> None:
         self._retry_policy = retry_policy or RetryPolicy()
+        self._max_rate_limit_wait = max_rate_limit_wait_seconds
+        """Tüm modeller rate limit'e takıldığında toplam ne kadar beklenip yeniden
+        deneneceği. 0 = hiç bekleme (eski davranış). Ücretsiz kademelerde sınır çoğunlukla
+        DAKİKALIK token kotasıdır; birkaç on saniye beklemek run'ı kurtarırken, beklememek
+        yarısı üretilmiş bir makaleyi çöpe atar (bkz. `generate`)."""
         self._cache = cache
         self._token_counter = token_counter or HeuristicTokenCounter()
         self._sleep_fn = sleep_fn
@@ -65,7 +71,12 @@ class BaseLLMProvider(ABC):
 
         `fallback_models` boşsa ve tek model başarısız olursa asıl hata (ör.
         `LLMRateLimitError`) doğrudan yükselir; birden fazla model denenip hepsi
-        başarısız olursa `LLMAllModelsExhaustedError` fırlatılır (bkz. `exceptions.py`)."""
+        başarısız olursa `LLMAllModelsExhaustedError` fırlatılır (bkz. `exceptions.py`).
+
+        Tüm modeller rate limit'e takıldıysa ve `max_rate_limit_wait_seconds > 0` ise,
+        en erken serbest kalan modelin süresi kadar beklenip tüm döngü tekrarlanır
+        (bütçe bitene kadar). Ücretsiz kademelerde sınır dakikalık olduğu için bu
+        bekleme, yarısı üretilmiş bir makalenin çöpe gitmesini engeller."""
         cache_key: str | None = None
         if self._cache is not None:
             cache_key = make_cache_key(request)
@@ -77,6 +88,64 @@ class BaseLLMProvider(ABC):
                 return cached
 
         models_to_try = [request.model, *request.fallback_models]
+        waited_total = 0.0
+
+        while True:
+            response, last_error = self._try_models(
+                request, models_to_try, agent_name=agent_name, run_id=run_id
+            )
+            if response is not None:
+                if self._cache is not None and cache_key is not None:
+                    self._cache.set(cache_key, response)
+                return response
+
+            wait = self._rate_limit_wait(
+                last_error,
+                models_to_try,
+                budget_left=self._max_rate_limit_wait - waited_total,
+            )
+            if wait is None:
+                break
+
+            # Beklendikten sonra süresi dolan modellerin engeli kaldırılır. `is_blocked`
+            # bunu kendi saatiyle de yapardı, ama engeli burada açıkça temizlemek
+            # `sleep_fn`'in enjekte edildiği durumlarda (testler) ve saat kaymalarında
+            # davranışı belirsizlikten kurtarır.
+            expiring = [
+                model
+                for model in models_to_try
+                if 0 < self._rate_limits.is_blocked(model)[1] <= wait
+            ]
+            self._logger.warning(
+                f"rate_limit_wait agent={agent_name} run_id={run_id} "
+                f"models={models_to_try} wait_s={wait:.1f}"
+            )
+            self._sleep_fn(wait)
+            waited_total += wait
+            for model in expiring:
+                self._rate_limits.clear(model)
+
+        if len(models_to_try) == 1 and last_error is not None:
+            # `fallback_models` tanımlı değildi — tek bir model denendi ve başarısız oldu.
+            # Çağırana genel bir "tükendi" hatası yerine, doğrudan yakalayıp ayırt
+            # edebileceği asıl hatayı (rate limit / timeout / vb.) veriyoruz.
+            raise last_error
+
+        raise LLMAllModelsExhaustedError(
+            f"Tüm modeller başarısız oldu: {models_to_try}"
+        ) from last_error
+
+    def _try_models(
+        self,
+        request: LLMRequest,
+        models_to_try: list[str],
+        *,
+        agent_name: str,
+        run_id: str,
+    ) -> tuple[LLMResponse | None, Exception | None]:
+        """Model + fallback listesini sırayla dener. İlk başarılı yanıtı `(response, None)`
+        olarak döndürür; hepsi başarısızsa `(None, son_hata)`. Cache yazımı ve rate limit
+        bekleme kararı çağırana (`generate`) aittir."""
         last_error: Exception | None = None
 
         for model in models_to_try:
@@ -130,20 +199,32 @@ class BaseLLMProvider(ABC):
             )
             if self._log_prompts:
                 self._logger.debug(f"prompt={request.messages!r} response={response.content!r}")
+            return response, None
 
-            if self._cache is not None and cache_key is not None:
-                self._cache.set(cache_key, response)
-            return response
+        return None, last_error
 
-        if len(models_to_try) == 1 and last_error is not None:
-            # `fallback_models` tanımlı değildi — tek bir model denendi ve başarısız oldu.
-            # Çağırana genel bir "tükendi" hatası yerine, doğrudan yakalayıp ayırt
-            # edebileceği asıl hatayı (rate limit / timeout / vb.) veriyoruz.
-            raise last_error
+    def _rate_limit_wait(
+        self, last_error: Exception | None, models_to_try: list[str], *, budget_left: float
+    ) -> float | None:
+        """Beklenip yeniden denenmesi gereken bir rate limit durumu varsa bekleme
+        süresini, yoksa `None` döndürür.
 
-        raise LLMAllModelsExhaustedError(
-            f"Tüm modeller başarısız oldu: {models_to_try}"
-        ) from last_error
+        Yalnızca hata rate limit kaynaklıysa ve modellerden en az birinin serbest kalma
+        süresi kalan bütçeye sığıyorsa beklenir; süresi bilinmeyen (retry_after=None)
+        rate limit'lerde beklemenin ne kadar süreceği kestirilemediği için beklenmez."""
+        if budget_left <= 0 or not isinstance(last_error, LLMRateLimitError):
+            return None
+
+        remaining_times = [
+            remaining
+            for remaining in (self._rate_limits.is_blocked(model)[1] for model in models_to_try)
+            if remaining > 0
+        ]
+        if not remaining_times:
+            return None
+
+        wait = min(remaining_times) + 0.5  # sınırın tam ucunda tekrar takılmamak için pay
+        return wait if wait <= budget_left else None
 
     def count_tokens(self, text: str, *, model: str) -> int:
         return self._token_counter.count(text, model=model)

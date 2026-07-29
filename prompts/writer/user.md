@@ -16,6 +16,12 @@ Başlık: $title
 Hedef kelime: $target_keyword
 Hedef kitle: $audience
 Hedef uzunluk: yaklaşık $target_word_count kelime
+Uzunluk sınırları (Editor bunları deterministik olarak denetler, ihlal reddedilir):
+en az $min_word_count, en fazla $max_word_count kelime.
+
+Bölüm başına bütçe: outline'daki her `##` bölümü **yaklaşık $words_per_section kelime**
+olmalı (en az 2-3 paragraf). Tek cümlelik veya tek paragraflık bölüm yazma; bir bölümü
+kısa geçersen makale alt sınırın altında kalır ve reddedilir.
 
 Outline:
 $outline
@@ -28,6 +34,18 @@ $key_facts
 
 $feedback
 
+## Reddedilen Önceki Taslak
+
+$previous_draft
+
 ## Görev
 
-Yukarıdaki plana göre makalenin tam gövde metnini, düz markdown olarak yaz.
+Önceki taslak yoksa: yukarıdaki plana göre makalenin tam gövde metnini, düz markdown
+olarak yaz.
+
+Önceki taslak varsa: onu SIFIRDAN YAZMA, **revize et**. Yalnızca geri bildirimde
+belirtilen yerlere dokun; geri bildirimde geçmeyen bölümleri, cümleleri ve genel
+uzunluğu olduğu gibi koru. Bir bölümü kısaltman veya silmen gerekiyorsa, kaybolan
+uzunluğu diğer bölümleri derinleştirerek telafi et — sonuç yine yukarıdaki kelime
+sınırları içinde kalmalıdır. Çıktın, kısmi bir düzeltme değil, makalenin revize
+edilmiş TAM gövdesi olsun.

@@ -124,6 +124,11 @@ class WriterInput(DomainModel):
     research: ResearchNotes
     feedback: str | None = None
     """EditorAgent'ın reddettiği bir önceki denemeden gelen geri bildirim (retry döngüsü)."""
+    previous_draft: str | None = None
+    """`feedback`in ait olduğu taslağın gövdesi. Writer'a verilmezse her denemede sıfırdan
+    yazar ve bir önceki denemede zaten sağlanmış kısıtları (ör. uzunluk) kaybeder —
+    gözlemlenen davranış: 556 -> 907 -> 638 kelime salınımı. Taslak verildiğinde iş
+    "yeniden yaz" değil "bu metni revize et" olur."""
 
 
 # ---------------------------------------------------------------------------- 4) SEOData

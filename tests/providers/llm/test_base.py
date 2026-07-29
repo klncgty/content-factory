@@ -109,6 +109,53 @@ def test_rate_limit_falls_back_to_next_model() -> None:
     assert response.content == "ok:model-b"
 
 
+def test_waits_out_rate_limit_when_budget_allows_then_succeeds() -> None:
+    """Ücretsiz kademelerde sınır DAKİKALIKtır: beklemeden vazgeçmek, yarısı üretilmiş
+    bir makaleyi çöpe atar. Bütçe yeterliyse süre beklenip aynı model tekrar denenir."""
+    slept: list[float] = []
+    provider = FakeLLMProvider(
+        side_effects={"model-a": [LLMRateLimitError("429", retry_after=20.0)]},
+        retry_policy=_fast_policy(),
+        sleep_fn=slept.append,
+        max_rate_limit_wait_seconds=90.0,
+    )
+
+    response = provider.generate(_request(), agent_name="writer", run_id="run-1")
+
+    assert response.content == "ok:model-a"
+    assert provider.calls == ["model-a", "model-a"]
+    assert slept and 20.0 <= slept[0] <= 21.0
+
+
+def test_does_not_wait_when_rate_limit_exceeds_budget() -> None:
+    slept: list[float] = []
+    provider = FakeLLMProvider(
+        side_effects={"model-a": [LLMRateLimitError("429", retry_after=300.0)]},
+        retry_policy=_fast_policy(),
+        sleep_fn=slept.append,
+        max_rate_limit_wait_seconds=90.0,
+    )
+
+    with pytest.raises(LLMRateLimitError):
+        provider.generate(_request(), agent_name="writer", run_id="run-1")
+    assert slept == []
+
+
+def test_does_not_wait_when_budget_is_zero() -> None:
+    """Varsayılan davranış (bütçe 0) değişmedi: rate limit anında yükselir."""
+    slept: list[float] = []
+    provider = FakeLLMProvider(
+        side_effects={"model-a": [LLMRateLimitError("429", retry_after=5.0)]},
+        retry_policy=_fast_policy(),
+        sleep_fn=slept.append,
+    )
+
+    with pytest.raises(LLMRateLimitError):
+        provider.generate(_request(), agent_name="writer", run_id="run-1")
+    assert slept == []
+    assert provider.calls == ["model-a"]
+
+
 def test_authentication_error_propagates_without_trying_fallback() -> None:
     provider = FakeLLMProvider(
         side_effects={"model-a": [LLMAuthenticationError("kötü anahtar")]},

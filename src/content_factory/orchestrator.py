@@ -217,13 +217,24 @@ class PipelineOrchestrator:
         return selected
 
     def _draft_cycle(
-        self, state: RunState, brief: Brief, research: ResearchNotes, *, feedback: str | None
+        self,
+        state: RunState,
+        brief: Brief,
+        research: ResearchNotes,
+        *,
+        feedback: str | None,
+        previous_draft: str | None = None,
     ) -> tuple[Article, LinkPlan]:
         """Writer -> SEOOptimizer -> Linker. Editor reddettiğinde tekrarlanan tek bölüm
         budur: metin değişince slug/meta ve iç linkler de yeniden hesaplanmalıdır."""
         state.step_history.append("writer")
         article = self.agents.writer(
-            WriterInput(brief=brief, research=research, feedback=feedback)
+            WriterInput(
+                brief=brief,
+                research=research,
+                feedback=feedback,
+                previous_draft=previous_draft,
+            )
         )
         self.logger.info(f"writer: {len(article.body_markdown.split())} kelime yazıldı")
 
@@ -296,7 +307,13 @@ class PipelineOrchestrator:
             )
             image = article.image
             article, link_plan = self._draft_cycle(
-                state, brief, research, feedback="\n".join(f"- {r}" for r in report.reasons)
+                state,
+                brief,
+                research,
+                feedback="\n".join(f"- {r}" for r in report.reasons),
+                # Reddedilen taslağın kendisi de verilir: Writer sıfırdan yazmak yerine
+                # yalnızca gerekçelerde yazan yerlere dokunur (bkz. WriterInput.previous_draft).
+                previous_draft=article.body_markdown,
             )
             # Görsel başlığa bağlıdır, metne değil — yeniden üretmek yerine taşınır.
             article = article.model_copy(update={"image": image})

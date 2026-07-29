@@ -7,6 +7,7 @@ takıldığında, `retry_after` süresi dolana kadar o modele **hiç istek gönd
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -41,6 +42,25 @@ class RateLimitState:
                 self._blocked_until.clear()
             else:
                 self._blocked_until.pop(model, None)
+
+
+_GROQ_DURATION_PART = re.compile(r"(\d+(?:\.\d+)?)(ms|s|m|h)")
+
+
+def parse_groq_duration(header_value: str | None) -> float | None:
+    """Groq'un `x-ratelimit-reset-*` başlıklarındaki süreyi saniyeye çevirir.
+
+    Biçim standart değildir: ``"18.285s"``, ``"4m19.2s"``, ``"250ms"`` gibi değerler
+    gelir. Ayrıştırılamazsa `None` döner."""
+    if not header_value:
+        return None
+    multipliers = {"ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0}
+    total = 0.0
+    matched = False
+    for value, unit in _GROQ_DURATION_PART.findall(header_value.strip()):
+        total += float(value) * multipliers[unit]
+        matched = True
+    return total if matched else None
 
 
 def parse_retry_after(header_value: str | None) -> float | None:

@@ -4,6 +4,10 @@ retries:
   editor_reject_max_retries: 2      # Writer'a geri dönüş sayısı
   scope_reject_max_retries: 2       # TopicScout'a geri dönüş sayısı
   llm_call_max_retries: 3           # ağ/rate-limit hataları için
+  # Asıl model VE tüm fallback'ler rate limit'e takıldığında toplam bekleme bütçesi.
+  # Ücretsiz kademelerde (Groq TPM, OpenRouter dakikalık) sınır dakikalıktır; beklemeden
+  # vazgeçmek yarısı üretilmiş bir makaleyi çöpe atar. 0 = hiç bekleme.
+  rate_limit_max_wait_seconds: 90
 
 timeouts:
   llm_call_seconds: 120

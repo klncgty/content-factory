@@ -224,6 +224,58 @@ def test_generate_connect_error_raises_provider_unavailable() -> None:
     provider.close()
 
 
+def test_generate_null_content_raises_provider_unavailable_and_retries() -> None:
+    """Reasoning modelleri token bütçesini düşünmede tüketirse 200 OK + content:null döner.
+
+    Bu, ham `None` `LLMResponse`'a verilirse pydantic ValidationError'ı olarak — retry/
+    fallback'in göremediği, pipeline'ı durduran bir hata olarak — patlıyordu.
+    """
+    calls: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(
+            200,
+            json={
+                "model": "openai/gpt-oss-20b:free",
+                "choices": [
+                    {"message": {"role": "assistant", "content": None}, "finish_reason": "length"}
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 3000, "total_tokens": 3010},
+            },
+        )
+
+    provider = _provider(handler, retry_policy=RetryPolicy(max_attempts=2, base_delay_seconds=0.0))
+    with pytest.raises(LLMProviderUnavailableError, match="boş içerik"):
+        provider.generate(_request(), agent_name="seo_optimizer", run_id="run-1")
+    assert len(calls) == 2  # geçici sayıldığı için retry edildi
+    provider.close()
+
+
+def test_generate_falls_back_to_next_model_on_empty_content() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if body["model"] == "openai/gpt-oss-20b:free":
+            return httpx.Response(
+                200,
+                json={
+                    "model": body["model"],
+                    "choices": [{"message": {"content": "   "}, "finish_reason": "stop"}],
+                    "usage": {},
+                },
+            )
+        return _success_response(model=body["model"])
+
+    provider = _provider(handler, retry_policy=RetryPolicy(max_attempts=1, base_delay_seconds=0.0))
+    response = provider.generate(
+        _request(model="openai/gpt-oss-20b:free", fallback_models=["anthropic/claude-sonnet-5"]),
+        agent_name="seo_optimizer",
+        run_id="run-1",
+    )
+    assert response.content == "merhaba!"
+    provider.close()
+
+
 # ----------------------------------------------------------------------------- stream()
 
 

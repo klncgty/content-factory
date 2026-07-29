@@ -23,6 +23,11 @@ class RetriesConfig(YamlModel):
     editor_reject_max_retries: int = 2
     scope_reject_max_retries: int = 2
     llm_call_max_retries: int = 3
+    rate_limit_max_wait_seconds: int = 0
+    """Tüm modeller (asıl + fallback) rate limit'e takıldığında toplam ne kadar beklenip
+    yeniden deneneceği. 0 = hiç bekleme. Ücretsiz kademelerde sınır dakikalık olduğu için
+    bunu 60-90 yapmak, yarısı üretilmiş bir makalenin çöpe gitmesini engeller
+    (bkz. providers/llm/base.py::BaseLLMProvider.generate)."""
 
 
 class TimeoutsConfig(YamlModel):

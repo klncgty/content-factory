@@ -1,38 +1,90 @@
-# GEÇİCİ UCUZ TEST PROFİLİ — bakiye eklendikten sonra BU DOSYAYI SİLİN.
+# GEÇİCİ ÜCRETSİZ TEST PROFİLİ — bakiye eklendikten sonra BU DOSYAYI SİLİN.
 #
-# Neden var: config/models.yaml, strategist/writer/linker için anthropic/claude-sonnet-5,
-# editor için openai/gpt-5 seçiyor. OpenRouter hesabında bu modeller için yeterli bakiye
-# yokken çağrılar 402 ile dönüyor ve pipeline strategist adımında duruyor. Bu dosya, tüm
-# rolleri çalıştığı doğrulanmış ucuz bir modele (gemini-2.5-flash) alarak pipeline'ın
-# uçtan uca denenebilmesini sağlar.
+# Neden var: config/models.yaml'daki varsayılanlar OpenRouter'ın `:free` modellerine
+# dayanıyor. OpenRouter ücretsiz kademesi GÜNDE 50 istek veriyor ("free-models-per-day";
+# 10 kredi eklenirse 1000/gün olur); tek bir pipeline run'ı editor retry'larıyla birlikte
+# 12-16 çağrı harcadığı için bu kota birkaç run'da tükeniyor ve tüm metin agent'ları
+# 429 ile duruyor. Bu dosya tüm rolleri Groq'a alır (GROQ_API_KEY).
 #
 # Bu dosya config/models.yaml'ı SİLMEZ, üzerine deep-merge edilir (bkz.
-# settings/loader.py::Settings.load) — yalnızca aşağıda yazan alanlar değişir,
-# temperature/max_tokens gibi geri kalan her şey engine varsayılanından gelir.
+# settings/loader.py::Settings.load) — yalnızca aşağıda yazan alanlar değişir.
 #
-# Kalite notu: editor'ün writer'dan FARKLI bir sağlayıcı kullanması bilinçli bir tasarım
-# tercihiydi (ARCHITECTURE.md §4 — "farklı bir göz", kör noktaları azaltır). Bu profil
-# ikisini de aynı modele aldığı için o güvence geçici olarak kayboluyor; kalıcı kullanım
-# için uygun değildir.
+# Groq ücretsiz kademesinde sınır MODEL BAŞINA dakikalık token'dır (TPM) ve tek bir
+# istek `prompt + max_tokens` kadar token rezerve eder; tavanı aşan istek 413 döner
+# (ölçülen: llama-3.3-70b 12k, gpt-oss-120b/20b 8k, qwen3.6-27b 8k, llama-3.1-8b 6k).
+# Bu yüzden aşağıda üç şey yapılır:
+#   1. max_tokens gerçek çıktı boyutuna göre ayarlanır (rezervasyonu küçültür),
+#   2. her role FARKLI bir modelden fallback verilir — bir modelin dakikalık kotası
+#      dolduğunda run ölmez, sıradaki modele geçer (bkz. providers/llm/base.py),
+#   3. JSON döndüren roller için fallback de reasoning YAPMAYAN bir model seçilir:
+#      gpt-oss gibi modeller küçük max_tokens ile bütçeyi düşünmede tüketip boş içerik
+#      döndürüyor (finish_reason=length).
+# Ayrıca editor bilinçli olarak writer'dan farklı bir model ailesindedir
+# (ARCHITECTURE.md §4 "farklı bir göz").
 
 agents:
   topic_scout:
     provider: groq
     model: llama-3.3-70b-versatile
-    fallback_models: []   # claude-sonnet-5 fallback'i bakiye gerektiriyor
+    fallback_models: [llama-3.1-8b-instant]
+    max_tokens: 1500          # ölçülen çıktı ~600 token
+
+  research:
+    provider: groq
+    model: openai/gpt-oss-20b
+    fallback_models: [llama-3.3-70b-versatile]
+    max_tokens: 2500          # prompt ~5.2k; reasoning payı dahil 8k tavanına sığmalı
 
   strategist:
-    model: google/gemma-4-26b-a4b-it:free
+    provider: groq
+    model: openai/gpt-oss-20b
+    fallback_models: [llama-3.3-70b-versatile]
+    max_tokens: 2500          # ölçülen çıktı ~570 + reasoning payı
 
   writer:
     provider: groq
+    # llama-3.3-70b-versatile denendi ve KULLANILAMAZ: 1000 kelime istenip editor'ün 800
+    # kelime alt sınırı prompt'a yazılmasına rağmen ~315 kelime yazıyor, editor geri
+    # bildirimiyle 3 denemede de uzatmıyor -> her run needs_review ile kapanıyordu.
+    # gpt-oss-120b aynı brief'te ~890 kelime yazıyor (engine varsayılanı zaten budur).
+    model: openai/gpt-oss-120b
+    # Fallback yalnızca 120b'nin kotası dolduğunda devreye girer; kısa yazdığı için
+    # editor muhtemelen reddeder ama run tamamen ölmez.
+    fallback_models: [llama-3.3-70b-versatile]
+    # DİKKAT — bu değeri düşürmeyin: gpt-oss bir reasoning modelidir ve max_tokens'ı
+    # düşünme + metin arasında paylaşır (ölçüm: ~1300 token düşünme). 3500'e çekildiğinde
+    # makale ~550 kelimede ORTASINDAN KESİLİYORDU (finish_reason=length).
+    # ~1000 kelime Türkçe metin ≈ 2200 token + düşünme payı => 4200.
+    # TPM kontrolü: prompt ~3.3k + 4.2k = 7.5k < 8k tavan.
+    max_tokens: 4200
+
+  seo_optimizer:
+    provider: groq
+    # JSON döndüren rol -> her iki model de reasoning yapmayan sohbet modeli.
     model: llama-3.3-70b-versatile
-    fallback_models: []   # openai/gpt-5 fallback'i de bakiye gerektirdiği için kaldırıldı
-    # Groq model seçimi yazma ajanını doğrudan bu sağlığa yönlendirir.
-    max_tokens: 4000
+    fallback_models: [llama-3.1-8b-instant]
+    max_tokens: 1200
 
   linker:
-    model: google/gemma-4-26b-a4b-it:free
+    # LinkerAgent LLM ÇAĞIRMAZ (StateStore anahtar kelime örtüşmesi kullanır);
+    # bu giriş yalnızca config bütünlüğü için durur.
+    provider: groq
+    model: llama-3.1-8b-instant
+    fallback_models: []
 
   editor:
-    model: google/gemma-4-26b-a4b-it:free
+    provider: groq
+    # Writer gpt-oss-120b; editor bilinçli olarak farklı bir aile (llama).
+    model: llama-3.3-70b-versatile
+    # qwen3.6 düşünme bloğunu `content` içine gömdüğü için önce kullanılamıyordu; Groq
+    # provider'ı bu aileye `reasoning_format: parsed` gönderdiğinden (groq.py) artık
+    # temiz JSON dönüyor ve kendi ayrı TPM kovasına sahip olduğu için iyi bir ara halka.
+    fallback_models: [qwen/qwen3.6-27b, openai/gpt-oss-20b]
+    max_tokens: 2500          # ölçülen çıktı ~250; prompt ~5k (+ düşünme payı) < 8k tavan
+
+  scope_guard:
+    provider: groq
+    # Ucuz/hızlı sınıflandırma yeterli.
+    model: llama-3.1-8b-instant
+    fallback_models: [llama-3.3-70b-versatile]
+    max_tokens: 300

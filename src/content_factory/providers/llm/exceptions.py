@@ -24,6 +24,21 @@ class LLMInvalidRequestError(LLMError):
     model). Retry/fallback faydasız."""
 
 
+class LLMRequestTooLargeError(LLMInvalidRequestError):
+    """İstek (prompt + max_tokens), modelin tek istekte kabul ettiği token tavanını aşıyor.
+
+    `LLMInvalidRequestError` alt sınıfıdır: beklemek veya başka bir modele geçmek çözmez,
+    istek küçülmeli. Sağlayıcı bildirdiyse `limit`/`requested` doldurulur; sağlayıcı bu
+    bilgiyle isteği bir kez daraltıp tekrar deneyebilir (bkz. groq.py::_do_generate)."""
+
+    def __init__(
+        self, message: str, *, limit: int | None = None, requested: int | None = None
+    ) -> None:
+        super().__init__(message)
+        self.limit = limit
+        self.requested = requested
+
+
 class LLMInsufficientCreditError(LLMError):
     """402 — sağlayıcı hesabında bu model için yeterli bakiye yok.
 

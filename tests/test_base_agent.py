@@ -28,6 +28,12 @@ def test_concrete_agent_call_runs_and_logs(agent_context: AgentContext) -> None:
 
 
 def test_load_config_reads_models_yaml(agent_context: AgentContext) -> None:
+    """Agent'ın config'i, marka override'ı uygulanmış hâliyle okuduğunu doğrular.
+
+    Beklenen model adı burada sabitlenmez: `brands/oleart/models.yaml` bir model/maliyet
+    ayar dosyasıdır ve değişmesi normaldir — sabitlemek testi her ayar değişikliğinde
+    kırıyordu. Doğrulanan davranış "aynı çözümlenmiş config'i okuyor" olmalı."""
     agent = _EchoAgent(agent_context)
     config = agent.load_config()
-    assert config.model == "google/gemini-2.5-flash"
+    assert config.model == agent_context.settings.models.for_agent("topic_scout").model
+    assert config.model

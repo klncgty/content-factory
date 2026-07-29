@@ -52,6 +52,7 @@ def _build_from_settings(
     timeout_seconds: float,
     max_retries: int,
     cache: LLMCache | None,
+    max_rate_limit_wait_seconds: float = 0.0,
 ) -> BaseLLMProvider:
     provider_cls = _REGISTRY.get(provider_name)
     if provider_cls is None:
@@ -65,6 +66,7 @@ def _build_from_settings(
         timeout_seconds=timeout_seconds,
         retry_policy=retry_policy,
         cache=cache,
+        max_rate_limit_wait_seconds=max_rate_limit_wait_seconds,
     )
 
 
@@ -81,6 +83,7 @@ def create_llm_provider_for_agent(
         timeout_seconds=float(settings.engine.timeouts.llm_call_seconds),
         max_retries=settings.engine.retries.llm_call_max_retries,
         cache=cache,
+        max_rate_limit_wait_seconds=float(settings.engine.retries.rate_limit_max_wait_seconds),
     )
 
 
@@ -95,6 +98,7 @@ def create_default_llm_provider(
         timeout_seconds=float(settings.engine.timeouts.llm_call_seconds),
         max_retries=settings.engine.retries.llm_call_max_retries,
         cache=cache,
+        max_rate_limit_wait_seconds=float(settings.engine.retries.rate_limit_max_wait_seconds),
     )
 
 
@@ -160,6 +164,9 @@ def create_agent_scoped_llm_provider(
                 timeout_seconds=float(settings.engine.timeouts.llm_call_seconds),
                 max_retries=settings.engine.retries.llm_call_max_retries,
                 cache=cache,
+                max_rate_limit_wait_seconds=float(
+                    settings.engine.retries.rate_limit_max_wait_seconds
+                ),
             )
         agent_providers[agent_name] = provider_instances[provider_name]
 
@@ -170,6 +177,9 @@ def create_agent_scoped_llm_provider(
             timeout_seconds=float(settings.engine.timeouts.llm_call_seconds),
             max_retries=settings.engine.retries.llm_call_max_retries,
             cache=cache,
+            max_rate_limit_wait_seconds=float(
+                settings.engine.retries.rate_limit_max_wait_seconds
+            ),
         ),
     )
     return AgentScopedLLMProvider(agent_providers, default_provider)
