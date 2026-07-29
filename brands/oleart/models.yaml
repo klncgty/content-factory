@@ -1,0 +1,37 @@
+# GEÇİCİ UCUZ TEST PROFİLİ — bakiye eklendikten sonra BU DOSYAYI SİLİN.
+#
+# Neden var: config/models.yaml, strategist/writer/linker için anthropic/claude-sonnet-5,
+# editor için openai/gpt-5 seçiyor. OpenRouter hesabında bu modeller için yeterli bakiye
+# yokken çağrılar 402 ile dönüyor ve pipeline strategist adımında duruyor. Bu dosya, tüm
+# rolleri çalıştığı doğrulanmış ucuz bir modele (gemini-2.5-flash) alarak pipeline'ın
+# uçtan uca denenebilmesini sağlar.
+#
+# Bu dosya config/models.yaml'ı SİLMEZ, üzerine deep-merge edilir (bkz.
+# settings/loader.py::Settings.load) — yalnızca aşağıda yazan alanlar değişir,
+# temperature/max_tokens gibi geri kalan her şey engine varsayılanından gelir.
+#
+# Kalite notu: editor'ün writer'dan FARKLI bir sağlayıcı kullanması bilinçli bir tasarım
+# tercihiydi (ARCHITECTURE.md §4 — "farklı bir göz", kör noktaları azaltır). Bu profil
+# ikisini de aynı modele aldığı için o güvence geçici olarak kayboluyor; kalıcı kullanım
+# için uygun değildir.
+
+agents:
+  topic_scout:
+    fallback_models: []   # claude-sonnet-5 fallback'i bakiye gerektiriyor
+
+  strategist:
+    model: google/gemini-2.5-flash
+
+  writer:
+    model: google/gemini-2.5-flash
+    fallback_models: []   # openai/gpt-5 fallback'i de bakiye gerektirdiği için kaldırıldı
+    # OpenRouter, kalan bakiyeyi max_tokens'a göre ön-rezerve eder: 8000 token'lık bir
+    # istek, bakiye o kadarını karşılamıyorsa daha başlamadan 402 ile reddedilir.
+    # 4000 token, 800-1500 kelimelik Türkçe bir makale için fazlasıyla yeterli.
+    max_tokens: 4000
+
+  linker:
+    model: google/gemini-2.5-flash
+
+  editor:
+    model: google/gemini-2.5-flash

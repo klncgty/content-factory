@@ -1,0 +1,32 @@
+# Oleart marka kimliği — YALNIZCA deterministik/structured kurallar burada.
+# Anlatı/ses/hikaye niteliğindeki bilgi knowledge/*.md içinde tutulur (LLM bağlamı için).
+# Bu ayrım bilinçli: brand.yaml'daki alanlar EditorAgent tarafından kod ile kontrol edilebilir
+# (ör. min/max kelime sayısı, yasaklı ifadeler); knowledge/ ise LLM'e "okuma metni" olarak verilir.
+
+brand: oleart
+display_name: Oleart
+website: https://oleart.co
+language: tr
+
+content_bounds:
+  min_word_count: 800
+  max_word_count: 1500
+
+forbidden_words:
+  - "mucize"
+  - "kesin çözüm"
+  - "%100 garanti"
+
+# EditorAgent bu listeye karşı deterministik kontrol yapar.
+# Zeytinyağı/ahşap ürünler için kanıtsız sağlık/tedavi iddiaları Türkiye reklam mevzuatına
+# aykırı olabilir — kritik guardrail.
+forbidden_claims:
+  - "hastalığı tedavi eder"
+  - "kanseri önler / tedavi eder"
+  - "ilaç yerine geçer"
+  - "kaynak gösterilmeyen klinik/istatistiksel sağlık iddiaları"
+
+scope_file: scope.yaml   # brands/oleart/scope.yaml — bkz. ARCHITECTURE.md §2
+
+# Not: knowledge/*.md konumu artık burada yapılandırılmaz — sabit bir sistem geneli
+# kuralla knowledge/brands/oleart/ altında yaşar (bkz. knowledge/README.md).

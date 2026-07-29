@@ -1,0 +1,22 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+
+# uv-managed virtualenv (uv.lock KALIR — reproducible install için commit edilir)
+.venv/
+
+# Marka-başına çalışma zamanı çıktıları — kalıcı olması gereken tek şey data/{brand}/*.db
+# DIŞINDA, o da genellikle .db uzantısıyla burada ignore edilir (SQLite dosyası,
+# StateStore her ortamda yeniden oluşturabilir; kalıcı "kaynak" YAML/markdown'lardır).
+data/*/*.db
+state/*/runs/
+state/*/needs_review/

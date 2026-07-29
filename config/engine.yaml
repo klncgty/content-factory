@@ -1,0 +1,31 @@
+# Engine-seviyesi (marka-bağımsız) çalışma zamanı ayarları.
+
+retries:
+  editor_reject_max_retries: 2      # Writer'a geri dönüş sayısı
+  scope_reject_max_retries: 2       # TopicScout'a geri dönüş sayısı
+  llm_call_max_retries: 3           # ağ/rate-limit hataları için
+
+timeouts:
+  llm_call_seconds: 120
+  image_generation_seconds: 180
+  pipeline_run_seconds: 1800
+
+# ImageGeneratorAgent'ın tek bir temel görselden ürettiği türevler (bkz. ARCHITECTURE.md §4).
+image_derivatives:
+  cover:
+    size: [1600, 900]
+    format: webp
+  thumbnail:
+    size: [600, 450]
+    format: webp
+  og_image:
+    size: [1200, 630]
+    format: webp
+
+state_store:
+  backend: sqlite
+  path_template: "data/{brand}/content_factory.db"
+
+run_artifacts:
+  path_template: "state/{brand}/runs/{run_id}"
+  retention_days: 90

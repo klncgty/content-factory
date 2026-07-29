@@ -1,0 +1,19 @@
+# Yayınlama hedefi — PublisherAgent (dosya üretimi) ve GitAgent (git işlemleri) tarafından okunur.
+# Not: Publisher git komutu ÇALIŞTIRMAZ, yalnızca bu path'lere dosya yazar. GitAgent onları commit/push eder.
+
+target_repo_path: ../oleart.co     # oleart.co'nun yerel çalışma kopyası
+
+# Publish contract — bkz. ARCHITECTURE.md §6. oleart.co bu path/isimlendirme sözleşmesine göre
+# markdown okuyup blog sayfası render etmelidir (bağımlılık, bkz. ROADMAP.md Faz 0).
+content_dir: content/blog                # {content_dir}/{YYYY-MM-DD}-{slug}.md
+images_dir: public/blog/images           # {images_dir}/{slug}/{cover,thumbnail,og-image}.webp
+public_root: public                      # site kökünden servis edilen dizin -> URL: /blog/images/...
+
+git:
+  remote: origin
+  branch: main
+  # direct-push  -> GitAgent onaylı içeriği doğrudan main'e push eder
+  # pr-then-automerge -> GitAgent branch + PR açar, ayrı bir automerge adımı gerekir
+  # Öneri: Faz 1-2 boyunca pr-then-automerge, editor+scope gate güven kazandıkça direct-push
+  publish_strategy: pr-then-automerge
+  commit_message_template: "blog: {slug} eklendi (+ {linked_articles_count} makale güncellendi)"

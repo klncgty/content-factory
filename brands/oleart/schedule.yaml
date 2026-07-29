@@ -1,0 +1,7 @@
+# Zamanlama konfigürasyonu (Faz 2'de scheduler tarafından okunur).
+
+cron: "0 7 * * 1"        # her Pazartesi 07:00 (publish_cadence: weekly ile senkron)
+timezone: "Europe/Istanbul"
+
+max_publishes_per_run: 1
+max_publishes_per_day: 1   # kaçak/hatalı döngüye karşı üst sınır

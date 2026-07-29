@@ -1,0 +1,59 @@
+# Oleart içerik kapsamı — SERT ALLOWLIST.
+# Bu dosya kod içermez; ScopeGuard (src/content_factory/guards/scope_guard.py) tarafından
+# hem TopicScout çıktısına (pre-check) hem Editor QA aşamasına (post-check) karşı çalıştırılır.
+# Buradaki gruplar/anahtar kelimeler dışında HİÇBİR konuda içerik üretilemez.
+
+brand: oleart
+schema_version: 1
+
+groups:
+  - id: olive_and_oil
+    label: "Zeytin ve Zeytinyağı"
+    topics:
+      - zeytinyağı
+      - trilye zeytini
+      - trilye zeytinyağı
+      - zeytin
+      - zeytin ağacı
+      - zeytin yetiştiriciliği
+      - zeytin hasadı
+      - soğuk sıkım
+      - erken hasat
+      - natürel sızma zeytinyağı
+      - zeytinyağının kullanım alanları
+      - zeytinyağının saklanması
+      - zeytinyağı ile yapılan tarifler
+      - zeytin çeşitleri
+
+  - id: wooden_products
+    label: "Zeytin Ağacından Ahşap Ürünler"
+    topics:
+      - zeytin ağacı kesme tahtaları
+      - zeytin ağacı sunum tahtaları
+      - zeytin ağacı mutfak gereçleri
+      - zeytin ağacı kaşıklar
+      - zeytin ağacı spatulalar
+      - zeytin ağacı servis ürünleri
+      - zeytin ağacı bakım rehberleri
+
+# Editor'ün semantik (LLM) sınıflandırma kontrolüne few-shot negatif örnek sağlar.
+# Kapsam dışı örnekler — bunlar yayınlanmaz.
+out_of_scope_examples:
+  - "genel sağlık/diyet tavsiyeleri (zeytinyağı bağlamı olmadan)"
+  - "ayçiçek yağı, kanola yağı gibi diğer yağ türleri"
+  - "zeytin/ahşapla ilgisiz genel mutfak ürünleri"
+  - "genel yaşam tarzı, seyahat, moda içerikleri"
+  - "Oleart ürünleriyle ilgisi olmayan tarifler (zeytinyağı temel malzeme değilse)"
+
+# İki bağımsız enforcement katmanı — yalnızca prompt talimatına güvenilmez:
+enforcement:
+  pre_check:
+    stage: after_topic_scout
+    method: deterministic_keyword_match   # topic.title/keywords, groups[].topics ile eşleşmeli
+    on_fail: discard_candidate_and_retry_topic_scout
+  post_check:
+    stage: editor_qa_gate
+    method: llm_classifier                # draft'ı groups[].id veya "out_of_scope" olarak sınıflandırır
+    on_fail: reject_and_return_to_writer  # normal editor retry döngüsüne girer (max_retries'e tabi)
+  audit:
+    log_rejections_to: scope_rejections   # SQLite tablosu, bkz. ARCHITECTURE.md §7
