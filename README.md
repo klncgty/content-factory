@@ -1,5 +1,6 @@
 # Content Factory
-![Uploading Görüntü.jpeg…]()
+<img width="1404" height="457" alt="Görüntü" src="https://github.com/user-attachments/assets/e5b79af1-f4ed-4c86-85a8-71564a62c175" />
+
 
 
 Marka-bağımsız, çoklu markaya genişleyebilecek otonom AI blog/SEO içerik üretim motoru.
