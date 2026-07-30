@@ -7,7 +7,11 @@ target_repo_path: ../oleart.co     # oleart.co'nun yerel çalışma kopyası
 # markdown okuyup blog sayfası render etmelidir (bağımlılık, bkz. ROADMAP.md Faz 0).
 content_dir: content/blog                # {content_dir}/{YYYY-MM-DD}-{slug}.md
 images_dir: public/blog/images           # {images_dir}/{slug}/{cover,thumbnail,og-image}.webp
-public_root: public                      # site kökünden servis edilen dizin -> URL: /blog/images/...
+public_root: "."                         # site kökünden servis edilen dizin -> URL: /public/blog/images/...
+# Not: oleart.co bir SSG değil, repo kökünü olduğu gibi servis eden statik bir sitedir —
+# `public/` dizini site köküne "açılmaz", URL'in gerçek bir parçasıdır. Bu yüzden burada
+# public_root YOKTUR ("."): images_dir kırpılmadan URL'e çevrilir. Mevcut yazılar ve
+# scripts/build-blog.mjs çıktısı da /public/blog/images/... kullanıyor.
 
 git:
   remote: origin
