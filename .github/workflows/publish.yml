@@ -56,7 +56,9 @@ jobs:
           # Aşağıdakiler mevcut model profilinde kullanılmıyor ama config değişirse gerekir.
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # Hedef repoya push + PR açma/merge etme yetkisi (bkz. .env.example).
+          # Hedef repoya push yetkisi (bkz. .env.example). Strateji direct-push olduğu
+          # için PR izni gerekmiyor; sayfaların derlenmesini oleart.co'daki
+          # .github/workflows/build-blog.yml bu push ile tetiklenerek yapar.
           GIT_TOKEN: ${{ secrets.GIT_TOKEN }}
         # `--target-repo`: publish.yaml `../oleart.co` diyor, Actions'ta hedef repo
         # çalışma dizininin İÇİNE (`oleart.co/`) klonlanıyor.
@@ -80,4 +82,9 @@ jobs:
           fi
           git add data/
           git commit -m "state: $(date -u +%Y-%m-%d) yayın run'ı"
-          git push
+          # Run sürerken main'e başka bir commit girmiş olabilir; çakışmada rebase edip
+          # tekrar dene. Yalnızca data/ dosyaları değiştiği için rebase güvenli.
+          git push || {
+            git pull --rebase origin main
+            git push
+          }

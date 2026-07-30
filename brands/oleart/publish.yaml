@@ -18,6 +18,17 @@ git:
   branch: main
   # direct-push  -> GitAgent onaylı içeriği doğrudan main'e push eder
   # pr-then-automerge -> GitAgent branch + PR açar, ayrı bir automerge adımı gerekir
-  # Öneri: Faz 1-2 boyunca pr-then-automerge, editor+scope gate güven kazandıkça direct-push
-  publish_strategy: pr-then-automerge
+  #
+  # 2026-07-30'da direct-push'a alındı. İki gerekçe:
+  #   1) GIT_TOKEN'ın PR izni yok — ölçüldü: repo yetkileri tam (admin/push/pull) ama
+  #      POST /repos/klncgty/oleart/pulls "403 Resource not accessible by personal
+  #      access token" dönüyor (fine-grained token'da Pull requests: Read and write
+  #      verilmemiş). Bu izin verilmeden pr-then-automerge içeriği bir branch'te
+  #      bırakır, main'e HİÇ ulaşmaz; yani otomatik yayın sessizce çalışmaz.
+  #   2) Otonom yayının güvenliği PR'a değil zorunlu geçitlere dayanıyor: ScopeGuard
+  #      (deterministik + LLM) ve Editor. İlk canlı run'da Editor 671 kelimelik
+  #      taslağı gerçekten reddedip yeniden yazdırdı — geçit çalışıyor.
+  # PR'lı akışa dönmek için: token'a Pull requests: Read and write ver, sonra bu değeri
+  # pr-then-automerge yap (kod değişikliği gerekmez).
+  publish_strategy: direct-push
   commit_message_template: "blog: {slug} eklendi (+ {linked_articles_count} makale güncellendi)"
