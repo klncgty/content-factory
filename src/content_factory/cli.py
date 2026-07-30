@@ -37,9 +37,10 @@ from content_factory.domain.models import RunStatus
 from content_factory.guards.scope_guard import ScopeGuard
 from content_factory.integrations.git_ops import LocalGitProvider
 from content_factory.integrations.image_client import create_image_provider
-from content_factory.knowledge.loader import KnowledgeLoader
+from content_factory.knowledge.loader import KnowledgeFileSpec, KnowledgeLoader
 from content_factory.orchestrator import PipelineAgents, PipelineOrchestrator
 from content_factory.prompts.loader import PromptLoader
+from content_factory.providers.llm.cache import InMemoryLLMCache
 from content_factory.providers.llm.factory import create_agent_scoped_llm_provider
 from content_factory.settings.loader import Settings
 from content_factory.state.sqlite_store import SQLiteStateStore
@@ -71,6 +72,18 @@ def _new_run_id() -> str:
     return f"{datetime.now():%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:6]}"
 
 
+def _topic_file_specs(settings: Settings) -> list[KnowledgeFileSpec]:
+    """`brands/{marka}/knowledge.yaml: topic_files` -> KnowledgeLoader'ın beklediği tip.
+    Config şeması ile knowledge katmanının veri tipini burada, kablolama noktasında
+    birleştiriyoruz — böylece iki katman birbirini import etmek zorunda kalmıyor."""
+    return [
+        KnowledgeFileSpec(
+            filename=spec.filename, field=spec.field, description=spec.description
+        )
+        for spec in settings.knowledge.topic_files
+    ]
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_arg_parser().parse_args(argv)
     run_id = args.run_id or _new_run_id()
@@ -99,7 +112,9 @@ def main(argv: list[str] | None = None) -> int:
     state_store = SQLiteStateStore(db_path)
     state_store.init_schema()
 
-    knowledge_loader = KnowledgeLoader(settings.root)
+    knowledge_loader = KnowledgeLoader(
+        settings.root, topic_files=_topic_file_specs(settings)
+    )
     report = knowledge_loader.validate(args.brand)
     if not report.is_valid:
         logger.warning(f"knowledge base eksik/boş dosyalar içeriyor: {report.issues}")
@@ -109,7 +124,9 @@ def main(argv: list[str] | None = None) -> int:
 
     # Tüm agent'lar için agent bazlı sağlayıcı seçimi destekler. `brands/{brand}/models.yaml`
     # içindeki `provider:` override'ları artık tek bir wrapper üzerinden çalışır.
-    llm_provider = create_agent_scoped_llm_provider(settings)
+    llm_provider = create_agent_scoped_llm_provider(
+        settings, cache=InMemoryLLMCache(), state=state_store
+    )
 
     # Görsel sağlayıcı da aynı ilkeyle kurulur: hangi sağlayıcı/model kullanılacağı
     # config/models.yaml: agents.image_generator'dan gelir. Temel görsel run dizinine
@@ -121,7 +138,7 @@ def main(argv: list[str] | None = None) -> int:
         run_id=run_id,
         settings=settings,
         knowledge=knowledge,
-        prompts=PromptLoader(settings.root),
+        prompts=PromptLoader(settings.root, brand=args.brand),
         llm=llm_provider,
         # `--dry-run`'da git provider hiç bağlanmaz; Orchestrator zaten GitAgent'ı
         # çağırmaz, provider'ın burada None kalması bunu ayrıca garanti eder.
@@ -151,6 +168,7 @@ def main(argv: list[str] | None = None) -> int:
 
     logger.info(f"pipeline bitti status={result.status.value} adımlar={result.step_history}")
     _log_summary(logger, result, settings=settings, log_dir=log_dir)
+    _log_llm_cost_summary(logger, state_store, run_id=run_id)
     if result.error:
         logger.error(f"hata: {result.error}")
     llm_provider.close()
@@ -158,6 +176,38 @@ def main(argv: list[str] | None = None) -> int:
     state_store.close()
 
     return 0 if result.status == RunStatus.COMPLETED else 1
+
+
+def _log_llm_cost_summary(
+    logger: logging.Logger, state_store: SQLiteStateStore, *, run_id: str
+) -> None:
+    """Gerçek $ maliyeti burada hesaplanmaz (sağlayıcı fiyatlandırması dışarıda) — bu
+    özet, model başına token/süre toplamlarını sağlayıcının kendi maliyet raporuyla
+    eşleştirmeye yetecek şekilde loglar (bkz. ARCHITECTURE.md §16)."""
+    calls = state_store.get_run_llm_calls(run_id)
+    if not calls:
+        return
+
+    totals: dict[str, dict[str, int]] = {}
+    for call in calls:
+        bucket = totals.setdefault(
+            call.model, {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "duration_ms": 0}
+        )
+        bucket["calls"] += 1
+        bucket["prompt_tokens"] += call.prompt_tokens
+        bucket["completion_tokens"] += call.completion_tokens
+        bucket["duration_ms"] += call.duration_ms
+
+    total_tokens = sum(c.total_tokens for c in calls)
+    logger.info(
+        f"llm maliyet özeti run_id={run_id} toplam_çağrı={len(calls)} "
+        f"toplam_token={total_tokens}"
+    )
+    for model, bucket in totals.items():
+        logger.info(
+            f"  model={model} çağrı={bucket['calls']} prompt_tokens={bucket['prompt_tokens']} "
+            f"completion_tokens={bucket['completion_tokens']} süre_ms={bucket['duration_ms']}"
+        )
 
 
 def _log_summary(logger: logging.Logger, result, settings: Settings, log_dir: Path) -> None:

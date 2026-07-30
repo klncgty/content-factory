@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from content_factory.domain.models import LLMCallRecord
 from content_factory.providers.llm.cache import InMemoryLLMCache
 from content_factory.providers.llm.exceptions import (
     LLMAllModelsExhaustedError,
@@ -221,6 +222,46 @@ def test_different_requests_do_not_share_cache_entry() -> None:
     provider.generate(_request(model="model-a"), agent_name="writer", run_id="run-1")
     provider.generate(_request(model="model-b"), agent_name="writer", run_id="run-1")
     assert provider.calls == ["model-a", "model-b"]
+
+
+class _FakeStateStore:
+    """`StateStore`'un yalnızca `record_llm_call` çağrısını gözlemleyen sahte hâli —
+    tam ABC'yi implemente etmeye gerek yok, `BaseLLMProvider` yalnızca bu metodu çağırır."""
+
+    def __init__(self) -> None:
+        self.calls: list[LLMCallRecord] = []
+
+    def record_llm_call(self, call: LLMCallRecord) -> None:
+        self.calls.append(call)
+
+
+def test_successful_call_records_llm_call_in_state_store() -> None:
+    state = _FakeStateStore()
+    provider = FakeLLMProvider(state=state, retry_policy=_fast_policy(), sleep_fn=lambda _: None)
+
+    provider.generate(_request(), agent_name="writer", run_id="run-1")
+
+    assert len(state.calls) == 1
+    recorded = state.calls[0]
+    assert recorded.run_id == "run-1"
+    assert recorded.agent_name == "writer"
+    assert recorded.provider == "fake"
+    assert recorded.model == "model-a"
+    assert recorded.duration_ms >= 0
+
+
+def test_cache_hit_does_not_record_llm_call() -> None:
+    state = _FakeStateStore()
+    cache = InMemoryLLMCache()
+    provider = FakeLLMProvider(
+        state=state, cache=cache, retry_policy=_fast_policy(), sleep_fn=lambda _: None
+    )
+    request = _request()
+
+    provider.generate(request, agent_name="writer", run_id="run-1")
+    provider.generate(request, agent_name="writer", run_id="run-2")
+
+    assert len(state.calls) == 1  # ikinci çağrı cache'ten döndü, yeni bir çağrı SAYILMAZ
 
 
 def test_count_tokens_delegates_to_token_counter() -> None:

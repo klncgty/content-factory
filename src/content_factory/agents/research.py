@@ -10,12 +10,6 @@ from content_factory.domain.exceptions import AgentOutputParsingError
 from content_factory.domain.models import ResearchNotes, Topic
 from content_factory.utils.json_llm import parse_llm_json
 
-_CATEGORY_KNOWLEDGE_FIELDS: dict[str, list[str]] = {
-    "olive_and_oil": ["olive_oil", "olive_tree"],
-    "wooden_products": ["olive_tree", "kitchen_products"],
-}
-_DEFAULT_KNOWLEDGE_FIELDS = ["olive_oil", "olive_tree", "kitchen_products"]
-
 
 class ResearchAgent(BaseAgent[Topic, ResearchNotes]):
     name = "research"
@@ -25,8 +19,11 @@ class ResearchAgent(BaseAgent[Topic, ResearchNotes]):
 
     def run(self, input_data: Topic) -> ResearchNotes:
         knowledge = self.require_knowledge()
-        fields = _CATEGORY_KNOWLEDGE_FIELDS.get(input_data.category, _DEFAULT_KNOWLEDGE_FIELDS)
+        # Hangi kategoride hangi konu dosyalarının okunacağı markaya özgüdür ve
+        # `brands/{marka}/knowledge.yaml`'da tanımlanır — bkz. ARCHITECTURE.md §3.
+        fields = self.context.settings.knowledge.knowledge_fields_for(input_data.category)
         reference_knowledge = knowledge.compose(*fields)
+        valid_sources = knowledge.source_filenames(*fields)
 
         user_message = self.load_prompts().render_user(
             topic_title=input_data.title,
@@ -38,17 +35,27 @@ class ResearchAgent(BaseAgent[Topic, ResearchNotes]):
         content = self.call_llm(
             system_prompt=self.load_prompts().system, user_message=user_message
         )
-        return self._parse_response(content, topic=input_data)
+        return self._parse_response(content, topic=input_data, valid_sources=valid_sources)
 
-    def _parse_response(self, content: str, *, topic: Topic) -> ResearchNotes:
+    def _parse_response(
+        self, content: str, *, topic: Topic, valid_sources: frozenset[str]
+    ) -> ResearchNotes:
         data = parse_llm_json(content, agent_name=self.name)
         if not isinstance(data, dict):
             raise AgentOutputParsingError(
                 f"{self.name}: LLM yanıtı bir nesne olmalıydı, {type(data).__name__} alındı"
             )
+        claimed_sources = [str(s) for s in data.get("sources_used", [])]
+        sources_used = [s for s in claimed_sources if s in valid_sources]
+        fabricated = [s for s in claimed_sources if s not in valid_sources]
+        if fabricated:
+            self.logger.warning(
+                f"{self.name}: uydurma kaynak(lar) atıldı (bu çağrıda gösterilmemiş "
+                f"dosyalar): {fabricated}"
+            )
         return ResearchNotes(
             topic=topic,
             key_facts=[str(f) for f in data.get("key_facts", [])],
             suggested_angle=str(data.get("suggested_angle", "")),
-            sources_used=[str(s) for s in data.get("sources_used", [])],
+            sources_used=sources_used,
         )

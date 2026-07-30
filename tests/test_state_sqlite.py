@@ -5,6 +5,7 @@ from datetime import date
 from content_factory.domain.models import (
     Article,
     InternalLinkRecord,
+    LLMCallRecord,
     ScopeRejectionRecord,
     SEOData,
     Topic,
@@ -101,6 +102,53 @@ def test_internal_link_and_scope_rejection_logging(state_store: SQLiteStateStore
         )
     )
     # Sıra bozulmadan devam ediyorsa (exception fırlatılmıyorsa) test geçer.
+
+
+def test_record_and_fetch_llm_calls(state_store: SQLiteStateStore) -> None:
+    state_store.record_llm_call(
+        LLMCallRecord(
+            run_id="run-1",
+            agent_name="writer",
+            provider="groq",
+            model="openai/gpt-oss-120b",
+            prompt_tokens=100,
+            completion_tokens=50,
+            total_tokens=150,
+            duration_ms=1200,
+        )
+    )
+    state_store.record_llm_call(
+        LLMCallRecord(
+            run_id="run-1",
+            agent_name="editor",
+            provider="replicate",
+            model="meta/meta-llama-3-70b-instruct",
+            prompt_tokens=200,
+            completion_tokens=20,
+            total_tokens=220,
+            duration_ms=800,
+        )
+    )
+    state_store.record_llm_call(
+        LLMCallRecord(
+            run_id="run-other",
+            agent_name="writer",
+            provider="groq",
+            model="openai/gpt-oss-120b",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+            duration_ms=100,
+        )
+    )
+
+    calls = state_store.get_run_llm_calls("run-1")
+
+    assert len(calls) == 2
+    assert [c.agent_name for c in calls] == ["writer", "editor"]
+    assert calls[0].model == "openai/gpt-oss-120b"
+    assert calls[0].total_tokens == 150
+    assert calls[0].duration_ms == 1200
 
 
 def test_run_lifecycle(state_store: SQLiteStateStore) -> None:

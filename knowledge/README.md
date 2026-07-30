@@ -49,11 +49,18 @@ knowledge/
         └── sources.md                               # güvenilir kaynak politikası
 ```
 
-Bu 16 dosyanın tam listesi kodda da tek bir yerde tanımlıdır:
-`src/content_factory/knowledge/loader.py::KNOWLEDGE_FILES`. Yeni bir knowledge dosyası
-eklemek istersen önce oraya bir `KnowledgeFileSpec` eklemen, `BrandKnowledge`'a karşılık
-gelen alanı ve `get_*()` metodunu eklemen yeterlidir — geri kalan her şey (cache,
-validate, compose) bu tek kayıttan otomatik türer.
+Bu dosyalar iki gruba ayrılır:
+
+- **Motor dosyaları** (ton, yazım kuralları, hedef kitle…): her markada bulunur, listesi
+  `src/content_factory/knowledge/loader.py::CORE_FILES` içinde sabittir. Yeni bir tane
+  eklemek için oraya bir `KnowledgeFileSpec`, `BrandKnowledge`'a karşılık gelen alanı ve
+  `get_*()` metodunu eklemek yeterlidir.
+- **Markanın konusuna özgü dosyalar** (Oleart için `olive_oil.md`, `olive_tree.md`,
+  `kitchen_products.md`): Python'da DEĞİL, `brands/{marka}/knowledge.yaml: topic_files`
+  içinde tanımlanır ve `knowledge.get_topic("olive_oil")` / `compose("olive_oil")` ile
+  okunur. Böylece bambaşka bir konudaki ikinci marka çekirdek koda dokunmadan eklenebilir.
+
+Geri kalan her şey (cache, validate, compose) bu kayıtlardan otomatik türer.
 
 ## Kullanım (agent kodu içinden)
 
@@ -120,11 +127,16 @@ Content Factory çoklu-marka olacak şekilde tasarlandı (bkz. ARCHITECTURE.md �
 Yeni bir marka eklemek **çekirdek koda dokunmadan** yapılabilmelidir:
 
 1. `knowledge/brands/{yeni_marka}/` dizinini oluştur.
-2. `KNOWLEDGE_FILES`'taki 16 dosyanın hepsini oluştur (boş bırakma — en azından bu
+2. `CORE_FILES`'taki motor dosyalarının hepsini oluştur (boş bırakma — en azından bu
    README'deki placeholder formatını kullan: `> Faz 0 çıktısı: ...` ile başlayan bir
-   not, doldurulacak başlıkların listesi).
+   not, doldurulacak başlıkların listesi), ayrıca markanın konusuna özgü dosyaları ekle.
 3. `brands/{yeni_marka}/` altına `brand.yaml`, `scope.yaml`, `publish.yaml`,
-   `seo.yaml`, `schedule.yaml` dosyalarını ekle (bkz. `brands/oleart/` örnek olarak).
+   `seo.yaml`, `schedule.yaml` ve `knowledge.yaml` dosyalarını ekle (bkz. `brands/oleart/`
+   örnek olarak). `knowledge.yaml` markanın konu dosyalarını, kategori->knowledge
+   eşlemesini ve görsel sahnelerini tanımlar — bunlar eskiden Python'da sabitti.
+4. Markaya özgü prompt metni gerekiyorsa `brands/{yeni_marka}/prompts/{agent}/system.md`
+   ekle. Ortak `prompts/` dosyaları marka-nötrdür; override DOSYA bazında çalışır, yani
+   yalnızca `system.md`'yi ezip `user.md`'yi ortak bırakabilirsin.
 4. `content_scope.md`'nin `scope.yaml` ile, `forbidden_claims.md`'nin `brand.yaml`
    ile tutarlı olduğunu doğrulamak için testleri çalıştır:
    ```bash

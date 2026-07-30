@@ -4,19 +4,22 @@ from pathlib import Path
 
 import pytest
 
+from content_factory.cli import _topic_file_specs
 from content_factory.knowledge.loader import (
-    KNOWLEDGE_FILES,
+    CORE_FILES,
     BrandKnowledge,
+    KnowledgeFileSpec,
     KnowledgeLoader,
 )
 from content_factory.settings.loader import Settings
+from content_factory.settings.schemas import KnowledgeConfig
 
-EXPECTED_FILENAMES = {
+# Motor-seviyesi dosyalar: her markada bulunur, `CORE_FILES`'ta sabittir. Markanın
+# konusuna özgü dosyalar (oleart için olive_oil.md vb.) burada DEĞİL,
+# `brands/{marka}/knowledge.yaml: topic_files`'tan gelir.
+EXPECTED_CORE_FILENAMES = {
     "brand.md",
     "products.md",
-    "olive_oil.md",
-    "olive_tree.md",
-    "kitchen_products.md",
     "faq.md",
     "writing_rules.md",
     "seo_rules.md",
@@ -33,24 +36,31 @@ EXPECTED_FILENAMES = {
 
 @pytest.fixture
 def loader(settings: Settings) -> KnowledgeLoader:
-    return KnowledgeLoader(settings.root)
+    return KnowledgeLoader(settings.root, topic_files=_topic_file_specs(settings))
 
 
 # --------------------------------------------------------------------------- registry
 
 
-def test_registry_has_all_sixteen_expected_files() -> None:
-    filenames = {spec.filename for spec in KNOWLEDGE_FILES}
-    assert filenames == EXPECTED_FILENAMES
-    assert len(KNOWLEDGE_FILES) == 16
+def test_core_registry_has_expected_files() -> None:
+    assert {spec.filename for spec in CORE_FILES} == EXPECTED_CORE_FILENAMES
 
 
-def test_brand_knowledge_fields_match_registry() -> None:
+def test_brand_knowledge_fields_match_core_registry() -> None:
     from dataclasses import fields
 
-    field_names = {f.name for f in fields(BrandKnowledge)} - {"brand"}
-    registry_fields = {spec.field for spec in KNOWLEDGE_FILES}
-    assert field_names == registry_fields
+    field_names = {f.name for f in fields(BrandKnowledge)} - {"brand", "topics", "_topic_specs"}
+    assert field_names == {spec.field for spec in CORE_FILES}
+
+
+def test_brand_topic_files_come_from_config(settings: Settings, loader: KnowledgeLoader) -> None:
+    """Marka-özel dosyalar Python'da değil, brands/{marka}/knowledge.yaml'da tanımlı."""
+    knowledge = loader.load("oleart")
+    configured = {spec.field for spec in settings.knowledge.topic_files}
+
+    assert configured == {"olive_oil", "olive_tree", "kitchen_products"}
+    assert set(knowledge.topics) == configured
+    assert knowledge.get_topic("olive_oil"), "konu dosyası boş okundu"
 
 
 # --------------------------------------------------------------------------- loading
@@ -59,18 +69,14 @@ def test_brand_knowledge_fields_match_registry() -> None:
 def test_load_returns_populated_brand_knowledge(loader: KnowledgeLoader) -> None:
     knowledge = loader.load("oleart")
     assert knowledge.brand == "oleart"
-    for spec in KNOWLEDGE_FILES:
-        content = getattr(knowledge, spec.field)
-        assert content, f"{spec.filename} boş okundu"
+    for spec in CORE_FILES:
+        assert getattr(knowledge, spec.field), f"{spec.filename} boş okundu"
 
 
 def test_typed_getters_match_underlying_fields(loader: KnowledgeLoader) -> None:
     knowledge = loader.load("oleart")
     assert knowledge.get_brand() == knowledge.brand_overview
     assert knowledge.get_products() == knowledge.products
-    assert knowledge.get_olive_oil() == knowledge.olive_oil
-    assert knowledge.get_olive_tree() == knowledge.olive_tree
-    assert knowledge.get_kitchen_products() == knowledge.kitchen_products
     assert knowledge.get_faq() == knowledge.faq
     assert knowledge.get_writing_rules() == knowledge.writing_rules
     assert knowledge.get_seo_rules() == knowledge.seo_rules
@@ -202,3 +208,59 @@ def test_forbidden_claims_matches_brand_yaml(loader: KnowledgeLoader, settings: 
         assert _normalize_tr(claim) in forbidden_claims_normalized, (
             f"brand.yaml'daki yasaklı iddia '{claim}' forbidden_claims.md'de bulunamadı"
         )
+
+
+# ------------------------------------------------- ikinci marka (Adım 7 kabul kriteri)
+
+
+def test_second_brand_works_without_touching_python(tmp_path: Path) -> None:
+    """Adım 7'nin asıl iddiası: bambaşka bir konudaki marka, `content_factory` paketinde
+    HİÇBİR değişiklik yapmadan eklenebilmeli — yalnızca knowledge.yaml + .md dosyaları.
+
+    Bu test bilinçli olarak zeytine dair hiçbir isim kullanmaz; geçmesi, motor kodunda
+    Oleart'a özgü sabit kalmadığının kanıtıdır."""
+    brand_knowledge_dir = tmp_path / "knowledge" / "brands" / "kahve"
+    brand_knowledge_dir.mkdir(parents=True)
+    (brand_knowledge_dir / "brand.md").write_text("Kahve markası.", encoding="utf-8")
+    (brand_knowledge_dir / "roasting.md").write_text(
+        "Kavurma sıcaklığı 210°C civarındadır.", encoding="utf-8"
+    )
+
+    config = KnowledgeConfig.model_validate(
+        {
+            "brand": "kahve",
+            "topic_files": [
+                {
+                    "field": "roasting",
+                    "filename": "roasting.md",
+                    "description": "Kavurma bilgi tabanı",
+                }
+            ],
+            "category_knowledge": {"espresso": ["roasting"]},
+            "default_knowledge": ["roasting"],
+            "grounding_fields": ["roasting"],
+            "image_scenes": {"espresso": "an espresso cup on a marble counter"},
+            "default_image_scene": "roasted coffee beans on dark wood",
+        }
+    )
+    loader = KnowledgeLoader(
+        tmp_path,
+        topic_files=[
+            KnowledgeFileSpec(
+                filename=spec.filename, field=spec.field, description=spec.description
+            )
+            for spec in config.topic_files
+        ],
+    )
+    knowledge = loader.load("kahve")
+
+    # Konu dosyası okundu ve prompt'a hazır metne dönüştü.
+    assert knowledge.get_topic("roasting").startswith("Kavurma")
+    assert "## Kavurma bilgi tabanı" in knowledge.compose("roasting")
+    assert knowledge.source_filenames("roasting") == frozenset({"roasting.md"})
+
+    # Agent'ların okuduğu kategori eşlemeleri config'ten geliyor.
+    assert config.knowledge_fields_for("espresso") == ["roasting"]
+    assert config.knowledge_fields_for("bilinmeyen") == ["roasting"]
+    assert config.image_scene_for("espresso") == "an espresso cup on a marble counter"
+    assert config.image_scene_for(None) == "roasted coffee beans on dark wood"

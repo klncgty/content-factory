@@ -19,7 +19,8 @@ ARCHITECTURE.md §3 ve `knowledge/README.md`.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass, fields
+from collections.abc import Sequence
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 from content_factory.utils.logging import get_logger
@@ -40,17 +41,13 @@ class KnowledgeFileSpec:
     description: str
 
 
-# Tek kaynak: hangi dosya hangi `BrandKnowledge` alanına gider ve ne işe yarar.
-# `BrandKnowledge` alanları, `KnowledgeLoader._read_from_disk` ve `validate()` hepsi
-# bu listeden türetilir — yeni bir knowledge dosyası eklemek tek satırlık bir değişikliktir.
-KNOWLEDGE_FILES: tuple[KnowledgeFileSpec, ...] = (
+# Motor-seviyesi knowledge dosyaları: HER markada bulunan, konudan bağımsız kavramlar
+# (ton, yazım kuralları, hedef kitle…). Markanın KONUSUNA özgü dosyalar burada değil,
+# `brands/{marka}/knowledge.yaml: topic_files` içinde tanımlanır — böylece ikinci bir
+# marka eklemek bu dosyayı düzenlemeyi gerektirmez.
+CORE_FILES: tuple[KnowledgeFileSpec, ...] = (
     KnowledgeFileSpec("brand.md", "brand_overview", "Marka kimliği: kim, misyon, vizyon, değerler"),
     KnowledgeFileSpec("products.md", "products", "Satılan tüm ürün kategorileri"),
-    KnowledgeFileSpec("olive_oil.md", "olive_oil", "Zeytinyağı hakkında doğrulanmış bilgi tabanı"),
-    KnowledgeFileSpec("olive_tree.md", "olive_tree", "Zeytin ağacı hakkında bilgi tabanı"),
-    KnowledgeFileSpec(
-        "kitchen_products.md", "kitchen_products", "Zeytin ağacından üretilen mutfak ürünleri"
-    ),
     KnowledgeFileSpec("faq.md", "faq", "Sık sorulan sorular"),
     KnowledgeFileSpec("writing_rules.md", "writing_rules", "Yazım standartları"),
     KnowledgeFileSpec("seo_rules.md", "seo_rules", "Blog SEO standartları"),
@@ -63,29 +60,30 @@ KNOWLEDGE_FILES: tuple[KnowledgeFileSpec, ...] = (
         "forbidden_claims.md", "forbidden_claims", "Yasaklı ifadeler (kanonik kaynak: brand.yaml)"
     ),
     KnowledgeFileSpec("target_audience.md", "target_audience", "Hedef müşteri profilleri"),
-    KnowledgeFileSpec("tone.md", "tone", "Oleart'ın marka sesi"),
+    KnowledgeFileSpec("tone.md", "tone", "Markanın sesi"),
     KnowledgeFileSpec("style_guide.md", "style_guide", "Biçimsel/stilistik tercihler"),
     KnowledgeFileSpec("sources.md", "sources", "Güvenilir kaynak politikası"),
 )
 
-_FILES_BY_FIELD: dict[str, KnowledgeFileSpec] = {spec.field: spec for spec in KNOWLEDGE_FILES}
+_CORE_BY_FIELD: dict[str, KnowledgeFileSpec] = {spec.field: spec for spec in CORE_FILES}
 
 
 @dataclass(frozen=True)
 class BrandKnowledge:
-    """Bir markanın tüm bilgi tabanının bellekteki, tip güvenli görünümü.
+    """Bir markanın tüm bilgi tabanının bellekteki görünümü.
 
-    Her alan ham markdown içeriğidir (agent'lar bunu doğrudan prompt bağlamına
-    ekler). Dosya `KNOWLEDGE_FILES`'ta yoksa/boşsa değer `""` olur — eksik bir
-    knowledge dosyası pipeline'ı çökertmez (bkz. `validate()` ile ayrı bir denetim)."""
+    Motor-seviyesi dosyalar (`CORE_FILES`) tip güvenli alanlar olarak durur — her
+    markada bulundukları için isimleri sabittir. Markanın konusuna özgü dosyalar ise
+    `topics` sözlüğünde tutulur; adlarını `brands/{marka}/knowledge.yaml` belirler.
+
+    Her değer ham markdown içeriğidir (agent'lar bunu doğrudan prompt bağlamına ekler).
+    Dosya yoksa/boşsa değer `""` olur — eksik bir knowledge dosyası pipeline'ı
+    çökertmez (bkz. `validate()` ile ayrı bir denetim)."""
 
     brand: str
 
     brand_overview: str = ""
     products: str = ""
-    olive_oil: str = ""
-    olive_tree: str = ""
-    kitchen_products: str = ""
     faq: str = ""
     writing_rules: str = ""
     seo_rules: str = ""
@@ -98,6 +96,12 @@ class BrandKnowledge:
     style_guide: str = ""
     sources: str = ""
 
+    topics: dict[str, str] = field(default_factory=dict)
+    """Markaya özgü konu dosyaları: `knowledge.yaml: topic_files`'taki `field` -> içerik."""
+
+    _topic_specs: dict[str, KnowledgeFileSpec] = field(default_factory=dict, repr=False)
+    """`compose()`'un bölüm başlıklarında kullandığı açıklamalar."""
+
     # -- tip güvenli okuma API'si (agent'ların çağıracağı arayüz) --------------------
     def get_brand(self) -> str:
         return self.brand_overview
@@ -105,14 +109,10 @@ class BrandKnowledge:
     def get_products(self) -> str:
         return self.products
 
-    def get_olive_oil(self) -> str:
-        return self.olive_oil
-
-    def get_olive_tree(self) -> str:
-        return self.olive_tree
-
-    def get_kitchen_products(self) -> str:
-        return self.kitchen_products
+    def get_topic(self, field_name: str) -> str:
+        """Markaya özgü bir konu dosyasının içeriği (`knowledge.yaml: topic_files`).
+        Tanımsız bir ad `""` döndürür — eksik knowledge pipeline'ı çökertmez."""
+        return self.topics.get(field_name, "")
 
     def get_faq(self) -> str:
         return self.faq
@@ -147,18 +147,37 @@ class BrandKnowledge:
     def get_sources(self) -> str:
         return self.sources
 
+    def _spec(self, field_name: str) -> KnowledgeFileSpec:
+        """Alan adını dosya tanımına çözer — önce motor dosyaları, sonra markanın konu
+        dosyaları. İkisinde de yoksa yazım hatası vardır ve sessizce geçilmemelidir."""
+        spec = _CORE_BY_FIELD.get(field_name) or self._topic_specs.get(field_name)
+        if spec is None:
+            raise KeyError(f"Bilinmeyen knowledge alanı: {field_name!r}")
+        return spec
+
+    def _content(self, field_name: str) -> str:
+        return self.topics.get(field_name) or getattr(self, field_name, "")
+
     def compose(self, *field_names: str) -> str:
         """Birden çok alanı, aralarında başlıklarla tek bir prompt-hazır metinde
         birleştirir. Ör: ``knowledge.compose("tone", "writing_rules", "olive_oil")``
         — WriterAgent'ın sistem promptuna doğrudan eklenebilir."""
         sections: list[str] = []
         for name in field_names:
-            if name not in _FILES_BY_FIELD:
-                raise KeyError(f"Bilinmeyen knowledge alanı: {name!r}")
-            content = getattr(self, name)
+            spec = self._spec(name)
+            content = self._content(name)
             if content:
-                sections.append(f"## {_FILES_BY_FIELD[name].description}\n\n{content.strip()}")
+                sections.append(f"## {spec.description}\n\n{content.strip()}")
         return "\n\n---\n\n".join(sections)
+
+    def source_filenames(self, *field_names: str) -> frozenset[str]:
+        """`compose(*field_names)`'in fiilen içine koyduğu (yani modele gerçekten
+        gösterilen) alanların dosya adlarını döndürür — `compose()`'daki "içerik boşsa
+        atla" kuralıyla birebir aynı. ResearchAgent bunu, LLM'in `sources_used`'da
+        UYDURDUĞU (bu çağrıda hiç gösterilmemiş) dosya adlarını elemek için kullanır."""
+        return frozenset(
+            self._spec(name).filename for name in field_names if self._content(name)
+        )
 
 
 @dataclass(frozen=True)
@@ -189,10 +208,18 @@ class KnowledgeLoader:
     """Knowledge Base'in merkezi giriş noktası. Marka başına bir kez diskten okur,
     sonra bellekte cache'ler (bkz. modül docstring'i)."""
 
-    def __init__(self, root: Path | None = None) -> None:
+    def __init__(
+        self, root: Path | None = None, *, topic_files: Sequence[KnowledgeFileSpec] = ()
+    ) -> None:
         self._root = root or project_root()
+        # Markanın konu dosyaları `brands/{marka}/knowledge.yaml`'dan gelir; loader
+        # bunları YAML'dan kendisi okumaz (config okuma `settings` katmanının işidir).
+        self._topic_files = tuple(topic_files)
         self._cache: dict[str, BrandKnowledge] = {}
         self._lock = threading.Lock()
+
+    def _all_files(self) -> tuple[KnowledgeFileSpec, ...]:
+        return (*CORE_FILES, *self._topic_files)
 
     def brand_dir(self, brand: str) -> Path:
         return self._root / "knowledge" / "brands" / brand
@@ -227,7 +254,7 @@ class KnowledgeLoader:
             )
             return KnowledgeValidationReport(brand=brand, issues=tuple(issues))
 
-        for spec in KNOWLEDGE_FILES:
+        for spec in self._all_files():
             path = brand_dir / spec.filename
             if not path.exists():
                 issues.append(
@@ -252,21 +279,26 @@ class KnowledgeLoader:
 
     def _read_from_disk(self, brand: str) -> BrandKnowledge:
         brand_dir = self.brand_dir(brand)
-        values: dict[str, str] = {}
-        for spec in KNOWLEDGE_FILES:
+
+        def read(spec: KnowledgeFileSpec) -> str:
             path = brand_dir / spec.filename
             if not path.exists():
                 _logger.warning(f"knowledge dosyası eksik brand={brand} file={spec.filename}")
-                values[spec.field] = ""
-                continue
-            values[spec.field] = path.read_text(encoding="utf-8")
-        return BrandKnowledge(brand=brand, **values)
+                return ""
+            return path.read_text(encoding="utf-8")
+
+        return BrandKnowledge(
+            brand=brand,
+            **{spec.field: read(spec) for spec in CORE_FILES},
+            topics={spec.field: read(spec) for spec in self._topic_files},
+            _topic_specs={spec.field: spec for spec in self._topic_files},
+        )
 
 
-def _known_fields() -> frozenset[str]:
-    return frozenset(f.name for f in fields(BrandKnowledge)) - {"brand"}
+def _core_dataclass_fields() -> frozenset[str]:
+    return frozenset(f.name for f in fields(BrandKnowledge)) - {"brand", "topics", "_topic_specs"}
 
 
-assert _known_fields() == {spec.field for spec in KNOWLEDGE_FILES}, (
-    "BrandKnowledge alanları ile KNOWLEDGE_FILES kayıtları senkron değil"
+assert _core_dataclass_fields() == {spec.field for spec in CORE_FILES}, (
+    "BrandKnowledge alanları ile CORE_FILES kayıtları senkron değil"
 )

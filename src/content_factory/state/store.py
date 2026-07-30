@@ -14,6 +14,7 @@ from types import TracebackType
 from content_factory.domain.models import (
     Article,
     InternalLinkRecord,
+    LLMCallRecord,
     ScopeRejectionRecord,
     Topic,
 )
@@ -82,6 +83,15 @@ class StateStore(ABC):
     # -- scope audit (bkz. ARCHITECTURE.md §2) -----------------------------------------
     @abstractmethod
     def log_scope_rejection(self, rejection: ScopeRejectionRecord) -> None: ...
+
+    # -- llm çağrıları (bkz. ARCHITECTURE.md §16) --------------------------------------
+    @abstractmethod
+    def record_llm_call(self, call: LLMCallRecord) -> None:
+        """Her başarılı LLM çağrısını (model, token, süre) kaydeder — run başına
+        token/maliyet görünürlüğü `get_run_llm_calls` ile sağlanır."""
+
+    @abstractmethod
+    def get_run_llm_calls(self, run_id: str) -> list[LLMCallRecord]: ...
 
     # -- lifecycle ------------------------------------------------------------------------
     @abstractmethod

@@ -45,7 +45,7 @@ def _template_vars(text: str) -> set[str]:
 
 @pytest.fixture
 def loader(settings) -> PromptLoader:  # noqa: ANN001 - pytest fixture injection
-    return PromptLoader(settings.root)
+    return PromptLoader(settings.root, brand="oleart")
 
 
 @pytest.mark.parametrize("agent_name", sorted(EXPECTED_AGENTS))
@@ -123,3 +123,49 @@ def test_prompt_vars_match_user_template(loader: PromptLoader, agent_name: str) 
         f"{agent_name}: prompt_vars={sorted(owner.prompt_vars)} != "
         f"user.md değişkenleri={sorted(template_vars)}"
     )
+
+
+# ---------------------------------------------- marka override'ı (Adım 7, madde 2 ve 3)
+
+
+def test_brand_override_wins_over_shared_prompt(settings) -> None:  # noqa: ANN001
+    """`brands/{marka}/prompts/{agent}/system.md` varsa ortak dosyanın yerine geçer."""
+    shared = PromptLoader(settings.root).load("writer")
+    branded = PromptLoader(settings.root, brand="oleart").load("writer")
+
+    assert shared.system != branded.system
+    assert "Oleart" in branded.system
+    assert "Oleart" not in shared.system
+
+
+def test_fallback_to_shared_is_per_file(settings) -> None:  # noqa: ANN001
+    """Override DOSYA bazındadır: marka yalnızca system.md'yi ezdiyse user.md ortaktan
+    gelir — markaya özgü olan genellikle "sen kimsin", JSON şeması değildir."""
+    loader = PromptLoader(settings.root, brand="oleart")
+    brand_dir = loader.brand_agent_dir("writer")
+
+    assert (brand_dir / "system.md").exists()
+    assert not (brand_dir / "user.md").exists()
+    assert loader.load("writer").user_template == PromptLoader(settings.root).load(
+        "writer"
+    ).user_template
+
+
+def test_unknown_brand_falls_back_to_shared_prompts(settings) -> None:  # noqa: ANN001
+    """Override dizini olmayan bir marka ortak prompt'larla çalışabilmeli — ikinci
+    markanın ilk gün çalışması için gereken davranış."""
+    loader = PromptLoader(settings.root, brand="henuz-yok")
+    assert loader.load("writer").system == PromptLoader(settings.root).load("writer").system
+
+
+@pytest.mark.parametrize("agent_name", sorted(EXPECTED_AGENTS))
+def test_shared_prompts_are_brand_neutral(agent_name: str, settings) -> None:  # noqa: ANN001
+    """Ortak prompt'larda markaya/konuya özgü metin kalmamalı — kalırsa ikinci marka
+    kendi konusu yerine Oleart'ın konusunu yazar (Adım 7'nin asıl kabul kriteri)."""
+    prompt_set = PromptLoader(settings.root).load(agent_name)
+    haystack = (
+        f"{prompt_set.system}\n{prompt_set.user_template}\n{prompt_set.examples}".lower()
+    )
+
+    for term in ("oleart", "zeytin", "olive_and_oil", "wooden_products"):
+        assert term not in haystack, f"prompts/{agent_name}/ içinde marka-özel metin: {term!r}"

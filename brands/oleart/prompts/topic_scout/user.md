@@ -20,14 +20,14 @@ $published_titles
 
 Bir konuyu farklı kelimelerle yeniden yazmak da tekrardır: "X'in faydaları" yayınlandıysa
 "X nasıl kullanılır" YENİ BİR KONU DEĞİLDİR. Yukarıdaki listeden farklı bir konu ekseni
-seç ve markanın ürün gruplarını dengeli kullan — son yayınlar hangi gruptaysa diğer
-gruba ağırlık ver.
+seç ve markanın iki ürün grubunu (zeytin/zeytinyağı ve zeytin ağacından ahşap ürünler)
+dengeli kullan — son yayınlar hangi gruptaysa diğer gruba ağırlık ver.
 
 ## Görev
 
 $max_candidates adet aday konu üret. Her biri için:
 - `title`: SEO'ya uygun, aranabilir bir başlık (Türkçe)
-- `category`: yukarıdaki "Hedef Anahtar Kelime Kümeleri" bölümünde geçen grup id'si
+- `category`: içerik kapsamındaki grup id'si (`olive_and_oil` veya `wooden_products`)
 - `seed_keywords`: bu konuyla ilişkili 2-5 anahtar kelime
 - `score`: 0.0-1.0 arası, konunun SEO değeri + markaya uygunluğu tahmini
 - `rationale`: bu konuyu neden önerdiğinin tek cümlelik gerekçesi

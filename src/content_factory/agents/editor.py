@@ -29,9 +29,11 @@ from content_factory.domain.models import (
     LinkPlan,
     QADecision,
     QAReport,
+    ResearchNotes,
     ScopeDecision,
     ScopeRejectionRecord,
 )
+from content_factory.guards.grounding_guard import GroundingGuard, reference_texts_for
 from content_factory.guards.scope_guard import ScopeGuard
 from content_factory.utils.json_llm import parse_llm_json
 from content_factory.utils.text import blog_url
@@ -46,6 +48,7 @@ class EditorAgent(BaseAgent[EditorInput, QAReport]):
             "content_scope",
             "forbidden_words",
             "forbidden_claims",
+            "key_facts",
             "article_body",
         }
     )
@@ -65,6 +68,7 @@ class EditorAgent(BaseAgent[EditorInput, QAReport]):
             *self._check_forbidden_terms(article),
             *self._check_word_count(article),
             *self._check_link_integrity(article, input_data.link_plan),
+            *self._check_grounding(article, input_data.research),
         ]
 
         scope_result = self._scope_guard.post_check(
@@ -80,7 +84,7 @@ class EditorAgent(BaseAgent[EditorInput, QAReport]):
 
         # Katman 3 — yalnızca ilk iki katman temizse (bkz. modül docstring'i).
         if not reasons:
-            reasons.extend(self._llm_quality_review(article))
+            reasons.extend(self._llm_quality_review(article, input_data.research))
 
         return QAReport(
             decision=QADecision.APPROVED if not reasons else QADecision.REJECTED,
@@ -142,6 +146,37 @@ class EditorAgent(BaseAgent[EditorInput, QAReport]):
                 )
         return reasons
 
+    def _check_grounding(self, article: Article, research: ResearchNotes | None) -> list[str]:
+        """Makaledeki sayısal iddialar knowledge base'e (+ araştırma notlarına) dayanıyor mu?
+
+        Katman 3'teki LLM incelemesi bu vakaları kaçırıyor: makul görünen bir sayıyı
+        ("ideal saklama 14-18°C") model onaylıyor, çünkü sayının kaynakta GEÇİP
+        geçmediğini kontrol etmiyor. Bu deterministik ölçüm ise tam olarak onu yapar
+        (bkz. `guards/grounding_guard.py`)."""
+        knowledge = self.require_knowledge()
+        # Hangi knowledge alanlarının referans alınacağı markaya özgüdür
+        # (`brands/{marka}/knowledge.yaml: grounding_fields`).
+        fields = self.context.settings.knowledge.grounding_fields
+        guard = GroundingGuard(
+            reference_texts_for(
+                [knowledge.compose(field) for field in fields],
+                research.key_facts if research is not None else [],
+            )
+        )
+        result = guard.check(article.body_markdown)
+        if result.is_grounded:
+            return []
+
+        enforce = self.context.settings.engine.grounding.enforce
+        mode = "reddedildi" if enforce else "yalnızca uyarı (engine.yaml: grounding.enforce)"
+        self.logger.warning(
+            f"{self.name}: {len(result.ungrounded)} kaynaksız sayısal iddia [{mode}]: "
+            f"{[c.text for c in result.ungrounded]}"
+        )
+        # Uyarı modunda bulgular karara katılmaz — guard'ın gerçek makalelerdeki
+        # isabeti, yayın turunu riske atmadan ölçülebilsin diye (bkz. GroundingConfig).
+        return result.reasons() if enforce else []
+
     # ------------------------------------------------------------ katman 2: kapsam
 
     def _scope_guard_model(self) -> str:
@@ -171,10 +206,11 @@ class EditorAgent(BaseAgent[EditorInput, QAReport]):
 
     # ------------------------------------------------------ katman 3: LLM kalite
 
-    def _llm_quality_review(self, article: Article) -> list[str]:
+    def _llm_quality_review(self, article: Article, research: ResearchNotes | None) -> list[str]:
         knowledge = self.require_knowledge()
         prompts = self.load_prompts()
 
+        key_facts = research.key_facts if research is not None else []
         user_message = prompts.render_user(
             tone=knowledge.get_tone(),
             writing_rules=knowledge.get_writing_rules(),
@@ -184,6 +220,7 @@ class EditorAgent(BaseAgent[EditorInput, QAReport]):
                 f"- {claim}" for claim in self.context.settings.brand.forbidden_claims
             )
             or "(yok)",
+            key_facts="\n".join(f"- {fact}" for fact in key_facts) or "(araştırma notu yok)",
             article_body=article.body_markdown,
         )
         content = self.call_llm(system_prompt=prompts.system, user_message=user_message)

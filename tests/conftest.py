@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from content_factory.agents.base import AgentContext
+from content_factory.cli import _topic_file_specs
 from content_factory.knowledge.loader import BrandKnowledge, KnowledgeLoader
 from content_factory.prompts.loader import PromptLoader
 from content_factory.settings.loader import Settings
@@ -18,12 +19,14 @@ def settings() -> Settings:
 
 @pytest.fixture
 def knowledge(settings: Settings) -> BrandKnowledge:
-    return KnowledgeLoader(settings.root).load("oleart")
+    return KnowledgeLoader(
+        settings.root, topic_files=_topic_file_specs(settings)
+    ).load("oleart")
 
 
 @pytest.fixture
 def prompt_loader(settings: Settings) -> PromptLoader:
-    return PromptLoader(settings.root)
+    return PromptLoader(settings.root, brand="oleart")
 
 
 @pytest.fixture

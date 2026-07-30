@@ -3,7 +3,7 @@ aşağıda tanımlı izinli konu gruplarından birine mi girdiğini, yoksa kapsa
 olduğunu belirlemektir.
 
 Bu deterministik bir kural kontrolü DEĞİLDİR — makale konu dışına ustaca kaymış olsa
-bile (ör. markanın ürününden bahsederken genel bir yaşam tarzı tavsiyesine kayması
-gibi) bunu yakalaman beklenir.
+bile (ör. zeytinyağından bahsederken genel diyet tavsiyesine kayması gibi) bunu
+yakalaman beklenir.
 
 Yalnızca aşağıda istenen JSON formatında yanıt ver.

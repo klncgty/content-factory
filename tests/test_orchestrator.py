@@ -406,3 +406,65 @@ def test_works_without_scope_guard(agent_context: AgentContext) -> None:
 
     assert state.status is RunStatus.COMPLETED
     assert fakes["research"].calls[0].title == "Seyahat Rehberi"
+
+
+# --------------------------------------------------------------- topics_backlog (Adım 8)
+
+
+def test_unselected_candidates_are_saved_to_backlog(orchestrate, agent_context) -> None:
+    """Seçilmeyen uygun adaylar bir sonraki run için saklanmalı."""
+    topics = [
+        _topic("Zeytinyağı Donar mı?", score=0.9),
+        _topic("Zeytin Ağacı Kesme Tahtası Bakımı", seed_keywords=["zeytin ağacı"], score=0.8),
+    ]
+    orchestrate(topics=topics)
+
+    pending = agent_context.state.get_pending_topics("oleart")
+    assert [t.title for t in pending] == ["Zeytin Ağacı Kesme Tahtası Bakımı"]
+
+
+def test_selected_topic_is_not_saved_to_backlog(orchestrate, agent_context) -> None:
+    orchestrate(topics=[_topic("Zeytinyağı Donar mı?")])
+    assert agent_context.state.get_pending_topics("oleart") == []
+
+
+def test_backlog_topic_is_used_and_topic_scout_is_skipped(
+    orchestrate, agent_context
+) -> None:
+    """Adım 8'in asıl kazancı: backlog doluysa TopicScout hiç çağrılmaz (LLM tasarrufu)."""
+    agent_context.state.add_topic_candidates(
+        [_topic("Sele Zeytini Nasıl Yapılır?", seed_keywords=["zeytin"], score=0.7)]
+    )
+
+    state, fakes = orchestrate(topics=[_topic("Bu Konu Kullanılmamalı")])
+
+    assert fakes["topic_scout"].calls == []
+    assert "topic_scout" not in state.step_history
+    assert state.step_history[0] == "topic_backlog"
+    assert state.topic.title == "Sele Zeytini Nasıl Yapılır?"
+
+
+def test_used_backlog_topic_is_not_offered_again(orchestrate, agent_context) -> None:
+    agent_context.state.add_topic_candidates(
+        [_topic("Sele Zeytini Nasıl Yapılır?", seed_keywords=["zeytin"], score=0.7)]
+    )
+    orchestrate()
+    assert agent_context.state.get_pending_topics("oleart") == []
+
+
+def test_stale_backlog_topic_is_skipped_and_marked(orchestrate, agent_context) -> None:
+    """Kaydedildikten sonra benzeri yayınlanmış bir konu bayattır: kullanılmamalı,
+    `stale` işaretlenmeli ve her run'da yeniden değerlendirilmemeli."""
+    agent_context.state.record_article(
+        _article().model_copy(update={"status": ArticleStatus.PUBLISHED})
+    )
+    agent_context.state.add_topic_candidates(
+        [_topic("Zeytinyağı Donar mı?", seed_keywords=["zeytinyağı"], score=0.7)]
+    )
+
+    state, fakes = orchestrate(topics=[_topic("Sele Zeytini Nedir?", seed_keywords=["zeytin"])])
+
+    # Bayat backlog konusu kullanılmadı; TopicScout'a düşüldü.
+    assert fakes["topic_scout"].calls != []
+    assert state.topic.title == "Sele Zeytini Nedir?"
+    assert agent_context.state.get_pending_topics("oleart") == []

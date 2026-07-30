@@ -1,5 +1,5 @@
 from content_factory.knowledge.loader import (
-    KNOWLEDGE_FILES,
+    CORE_FILES,
     BrandKnowledge,
     KnowledgeFileSpec,
     KnowledgeLoader,
@@ -8,7 +8,7 @@ from content_factory.knowledge.loader import (
 )
 
 __all__ = [
-    "KNOWLEDGE_FILES",
+    "CORE_FILES",
     "BrandKnowledge",
     "KnowledgeFileSpec",
     "KnowledgeLoader",

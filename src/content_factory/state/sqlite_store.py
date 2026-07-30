@@ -16,6 +16,7 @@ from content_factory.domain.models import (
     ArticleStatus,
     ImageData,
     InternalLinkRecord,
+    LLMCallRecord,
     ScopeRejectionRecord,
     SEOData,
     Topic,
@@ -98,6 +99,21 @@ CREATE TABLE IF NOT EXISTS scope_rejections (
     reason TEXT NOT NULL,
     payload_snippet TEXT NOT NULL DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS llm_calls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    agent_name TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+    completion_tokens INTEGER NOT NULL DEFAULT 0,
+    total_tokens INTEGER NOT NULL DEFAULT 0,
+    duration_ms INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_llm_calls_run_id ON llm_calls (run_id);
 """
 
 # Bu sürüm, yukarıdaki _SCHEMA'nın karşılık geldiği şemayı temsil eder. Yeni bir
@@ -105,10 +121,13 @@ CREATE TABLE IF NOT EXISTS scope_rejections (
 # (3) eski DB'leri yeni sürüme taşıyacak ALTER/UPDATE deyimlerini _MIGRATIONS'a
 # yeni anahtar olarak ekle. PRAGMA user_version sayesinde her migration bir kez
 # uygulanır; var olan veriler silinmez veya bozulmaz.
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 _MIGRATIONS: dict[int, list[str]] = {
-    # Örnek: 2: ["ALTER TABLE articles ADD COLUMN foo TEXT"],
+    # 2: llm_calls tablosu tamamen YENİ (mevcut tabloları ALTER etmiyor), bu yüzden
+    # yukarıdaki `CREATE TABLE IF NOT EXISTS` eski DB'lerde de zaten çalışıyor —
+    # ayrı bir migration deyimi gerekmiyor, yalnızca sürüm burada belgeleniyor.
+    2: [],
 }
 
 
@@ -355,6 +374,46 @@ class SQLiteStateStore(StateStore):
             ),
         )
         self._conn.commit()
+
+    # -- llm çağrıları ------------------------------------------------------------------
+    def record_llm_call(self, call: LLMCallRecord) -> None:
+        self._conn.execute(
+            """INSERT INTO llm_calls
+               (run_id, agent_name, provider, model, prompt_tokens, completion_tokens,
+                total_tokens, duration_ms, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                call.run_id,
+                call.agent_name,
+                call.provider,
+                call.model,
+                call.prompt_tokens,
+                call.completion_tokens,
+                call.total_tokens,
+                call.duration_ms,
+                datetime.now().isoformat(),
+            ),
+        )
+        self._conn.commit()
+
+    def get_run_llm_calls(self, run_id: str) -> list[LLMCallRecord]:
+        rows = self._conn.execute(
+            "SELECT * FROM llm_calls WHERE run_id = ? ORDER BY id ASC", (run_id,)
+        ).fetchall()
+        return [
+            LLMCallRecord(
+                id=row["id"],
+                run_id=row["run_id"],
+                agent_name=row["agent_name"],
+                provider=row["provider"],
+                model=row["model"],
+                prompt_tokens=row["prompt_tokens"],
+                completion_tokens=row["completion_tokens"],
+                total_tokens=row["total_tokens"],
+                duration_ms=row["duration_ms"],
+            )
+            for row in rows
+        ]
 
     # -- lifecycle ------------------------------------------------------------------------
     def close(self) -> None:

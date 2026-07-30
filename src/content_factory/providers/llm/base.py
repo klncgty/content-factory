@@ -13,6 +13,7 @@ import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator
 
+from content_factory.domain.models import LLMCallRecord
 from content_factory.providers.llm.cache import LLMCache, make_cache_key
 from content_factory.providers.llm.exceptions import (
     LLMAllModelsExhaustedError,
@@ -28,6 +29,7 @@ from content_factory.providers.llm.models import LLMRequest, LLMResponse, LLMStr
 from content_factory.providers.llm.rate_limit import RateLimitState
 from content_factory.providers.llm.retry import RetryPolicy, retry_call
 from content_factory.providers.llm.token_counter import HeuristicTokenCounter, TokenCounter
+from content_factory.state.store import StateStore
 from content_factory.utils.logging import get_logger
 
 DEFAULT_UNKNOWN_RATE_LIMIT_WAIT_SECONDS = 20.0
@@ -57,7 +59,12 @@ class BaseLLMProvider(ABC):
         sleep_fn: Callable[[float], None] = time.sleep,
         log_prompts: bool = False,
         max_rate_limit_wait_seconds: float = 0.0,
+        state: StateStore | None = None,
     ) -> None:
+        self._state = state
+        """Verilirse her başarılı çağrı `llm_calls` tablosuna kaydedilir (model, token,
+        süre) — run başına maliyet, bu satırların sağlayıcının kendi fiyatlandırmasıyla
+        eşleştirilmesiyle görünür olur (bkz. ARCHITECTURE.md §16)."""
         self._retry_policy = retry_policy or RetryPolicy()
         self._max_rate_limit_wait = max_rate_limit_wait_seconds
         """Tüm modeller rate limit'e takıldığında toplam ne kadar beklenip yeniden
@@ -213,6 +220,19 @@ class BaseLLMProvider(ABC):
                 f"prompt_tokens={response.usage.prompt_tokens} "
                 f"completion_tokens={response.usage.completion_tokens} duration_s={duration:.2f}"
             )
+            if self._state is not None:
+                self._state.record_llm_call(
+                    LLMCallRecord(
+                        run_id=run_id,
+                        agent_name=agent_name,
+                        provider=self.name,
+                        model=model,
+                        prompt_tokens=response.usage.prompt_tokens,
+                        completion_tokens=response.usage.completion_tokens,
+                        total_tokens=response.usage.total_tokens,
+                        duration_ms=int(duration * 1000),
+                    )
+                )
             if self._log_prompts:
                 self._logger.debug(f"prompt={request.messages!r} response={response.content!r}")
             return response, None

@@ -23,6 +23,7 @@ from content_factory.providers.llm.openrouter import OpenRouterProvider
 from content_factory.providers.llm.replicate import ReplicateProvider
 from content_factory.providers.llm.retry import RetryPolicy
 from content_factory.settings.loader import Settings
+from content_factory.state.store import StateStore
 
 _REGISTRY: dict[str, type[BaseLLMProvider]] = {}
 
@@ -55,6 +56,7 @@ def _build_from_settings(
     max_retries: int,
     cache: LLMCache | None,
     max_rate_limit_wait_seconds: float = 0.0,
+    state: StateStore | None = None,
 ) -> BaseLLMProvider:
     provider_cls = _REGISTRY.get(provider_name)
     if provider_cls is None:
@@ -69,11 +71,16 @@ def _build_from_settings(
         retry_policy=retry_policy,
         cache=cache,
         max_rate_limit_wait_seconds=max_rate_limit_wait_seconds,
+        state=state,
     )
 
 
 def create_llm_provider_for_agent(
-    settings: Settings, agent_role: str, *, cache: LLMCache | None = None
+    settings: Settings,
+    agent_role: str,
+    *,
+    cache: LLMCache | None = None,
+    state: StateStore | None = None,
 ) -> BaseLLMProvider:
     """`config/models.yaml`'daki (+ marka override'ı) `agent_role` için tanımlı
     provider'ı inşa eder — model seçimi burada değil, her `generate()` çağrısında
@@ -86,11 +93,12 @@ def create_llm_provider_for_agent(
         max_retries=settings.engine.retries.llm_call_max_retries,
         cache=cache,
         max_rate_limit_wait_seconds=float(settings.engine.retries.rate_limit_max_wait_seconds),
+        state=state,
     )
 
 
 def create_default_llm_provider(
-    settings: Settings, *, cache: LLMCache | None = None
+    settings: Settings, *, cache: LLMCache | None = None, state: StateStore | None = None
 ) -> BaseLLMProvider:
     """Marka config'indeki `models.yaml: default_provider`'ı inşa eder. Bugün tüm text
     agent'ları aynı sağlayıcıyı (openrouter) paylaştığı için CLI/Orchestrator bu tek
@@ -101,6 +109,7 @@ def create_default_llm_provider(
         max_retries=settings.engine.retries.llm_call_max_retries,
         cache=cache,
         max_rate_limit_wait_seconds=float(settings.engine.retries.rate_limit_max_wait_seconds),
+        state=state,
     )
 
 
@@ -147,7 +156,7 @@ class AgentScopedLLMProvider(BaseLLMProvider):
 
 
 def create_agent_scoped_llm_provider(
-    settings: Settings, *, cache: LLMCache | None = None
+    settings: Settings, *, cache: LLMCache | None = None, state: StateStore | None = None
 ) -> BaseLLMProvider:
     """Agent başına uygun sağlayıcıyı seçip tek bir wrapper provider içinde paketler."""
     provider_instances: dict[str, BaseLLMProvider] = {}
@@ -171,6 +180,7 @@ def create_agent_scoped_llm_provider(
                 max_rate_limit_wait_seconds=float(
                     settings.engine.retries.rate_limit_max_wait_seconds
                 ),
+                state=state,
             )
         agent_providers[agent_name] = provider_instances[provider_name]
 
@@ -184,6 +194,7 @@ def create_agent_scoped_llm_provider(
             max_rate_limit_wait_seconds=float(
                 settings.engine.retries.rate_limit_max_wait_seconds
             ),
+            state=state,
         ),
     )
     return AgentScopedLLMProvider(agent_providers, default_provider)

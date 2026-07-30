@@ -41,6 +41,25 @@ def test_returns_research_notes_bound_to_topic(agent_context: AgentContext) -> N
     assert notes.sources_used == ["olive_oil.md"]
 
 
+def test_fabricated_sources_are_filtered_out(agent_context: AgentContext) -> None:
+    response = json.dumps(
+        {
+            "key_facts": ["fact"],
+            "suggested_angle": "açı",
+            # olive_oil.md gerçek ve bu çağrıda gösterildi; kitchen_products.md gerçek
+            # ama olive_and_oil kategorisinde GÖSTERİLMEDİ; wikipedia.org hiç bir
+            # knowledge dosyası değil — ikisi de uydurma sayılıp elenmeli.
+            "sources_used": ["olive_oil.md", "kitchen_products.md", "wikipedia.org"],
+        }
+    )
+    agent_context.llm = StubLLMProvider(responses=[response])
+    agent = ResearchAgent(agent_context)
+
+    notes = agent(_topic(category="olive_and_oil"))
+
+    assert notes.sources_used == ["olive_oil.md"]
+
+
 def test_selects_knowledge_fields_by_category(agent_context: AgentContext) -> None:
     stub = StubLLMProvider(responses=[_VALID_RESPONSE, _VALID_RESPONSE])
     agent_context.llm = stub

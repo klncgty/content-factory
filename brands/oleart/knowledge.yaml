@@ -1,0 +1,53 @@
+# Markaya özgü konu bilgisi — bu dosya OLMADAN motor kodu hiçbir markanın konusunu bilmez.
+#
+# Buradaki her şey eskiden Python'da sabit olarak duruyordu (knowledge/loader.py,
+# agents/research.py, agents/image_generator.py, agents/editor.py). İkinci bir marka
+# eklemek `content_factory` paketini düzenlemeyi gerektiriyordu; artık gerektirmiyor:
+# yeni bir marka için `brands/{marka}/knowledge.yaml` + `knowledge/brands/{marka}/*.md`
+# yazmak yeterli.
+#
+# NOT: Ton, yazım kuralları, hedef kitle gibi dosyalar burada TANIMLANMAZ — onlar her
+# markada bulunan motor-seviyesi kavramlardır ve `knowledge/loader.py: CORE_FILES`
+# içinde sabittir. Burada yalnızca markanın KONUSUNA özgü dosyalar listelenir.
+
+brand: oleart
+schema_version: 1
+
+# knowledge/brands/oleart/ altındaki konu dosyaları.
+# `field` adı aşağıdaki listelerde ve `knowledge.compose()` çağrılarında kullanılır.
+topic_files:
+  - field: olive_oil
+    filename: olive_oil.md
+    description: "Zeytinyağı hakkında doğrulanmış bilgi tabanı"
+  - field: olive_tree
+    filename: olive_tree.md
+    description: "Zeytin ağacı hakkında bilgi tabanı"
+  - field: kitchen_products
+    filename: kitchen_products.md
+    description: "Zeytin ağacından üretilen mutfak ürünleri"
+
+# ResearchAgent: makale kategorisine (scope.yaml'daki grup id'si) göre hangi konu
+# dosyalarının referans olarak modele verileceği.
+category_knowledge:
+  olive_and_oil: [olive_oil, olive_tree]
+  wooden_products: [olive_tree, kitchen_products]
+default_knowledge: [olive_oil, olive_tree, kitchen_products]
+
+# EditorAgent / GroundingGuard: sayısal iddiaların doğrulanacağı referans alanlar.
+# Olgusal/sayısal bilgi taşıyan dosyalar; ton/yazım kuralları sayı içermediği için yok.
+grounding_fields: [olive_oil, olive_tree, kitchen_products, products, faq]
+
+# ImageGeneratorAgent: kategori -> görsel sahnesi.
+# Sahne tarifleri İNGİLİZCE tutulur: görsel modelleri (flux) İngilizce prompt'larda
+# belirgin biçimde daha isabetli çalışıyor ve Türkçe metin verildiğinde onu görselin
+# ÜZERİNE yazmaya çalışıyor (ölçüm: Türkçe prompt'la üretilen kapak, makale başlığını
+# bozuk harflerle basılmış bir infografiğe çevirdi).
+image_scenes:
+  olive_and_oil: >-
+    a bottle of extra virgin olive oil beside fresh olives and an olive branch
+    on a rustic wooden table
+  wooden_products: >-
+    a handcrafted olive wood kitchen board and utensils on a linen cloth,
+    warm studio light
+default_image_scene: >-
+  olives and olive oil on a rustic wooden surface, warm natural tones

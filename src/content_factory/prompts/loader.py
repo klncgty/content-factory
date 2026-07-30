@@ -41,13 +41,32 @@ class PromptSet:
 
 
 class PromptLoader:
-    def __init__(self, root: Path | None = None) -> None:
+    def __init__(self, root: Path | None = None, *, brand: str | None = None) -> None:
         self._root = root or project_root()
+        # Marka verilirse `brands/{marka}/prompts/` DOSYA BAZINDA öncelik kazanır:
+        # markanın kendi `system.md`'si varsa o kullanılır, `user.md`'si yoksa ortak
+        # olana düşülür. Dosya bazında olması önemli — markaya özgü olan genellikle
+        # yalnızca "sen kimsin/neyi kapsıyorsun" kısmıdır, JSON şeması değil.
+        self._brand = brand
         self._cache: dict[str, PromptSet] = {}
         self._lock = threading.Lock()
 
     def agent_dir(self, agent_name: str) -> Path:
         return self._root / "prompts" / agent_name
+
+    def brand_agent_dir(self, agent_name: str) -> Path | None:
+        if self._brand is None:
+            return None
+        return self._root / "brands" / self._brand / "prompts" / agent_name
+
+    def resolve_file(self, agent_name: str, filename: str) -> Path | None:
+        """Bir prompt dosyasının fiilen okunacağı yol: önce markaya özgü, sonra ortak.
+        Hiçbiri yoksa `None`."""
+        brand_dir = self.brand_agent_dir(agent_name)
+        if brand_dir is not None and (brand_path := brand_dir / filename).exists():
+            return brand_path
+        shared_path = self.agent_dir(agent_name) / filename
+        return shared_path if shared_path.exists() else None
 
     def load(self, agent_name: str, *, force_reload: bool = False) -> PromptSet:
         with self._lock:
@@ -65,11 +84,10 @@ class PromptLoader:
                 self._cache.pop(agent_name, None)
 
     def _read_from_disk(self, agent_name: str) -> PromptSet:
-        agent_dir = self.agent_dir(agent_name)
         values: dict[str, str] = {}
         for filename in _FILES:
-            path = agent_dir / filename
-            if not path.exists():
+            path = self.resolve_file(agent_name, filename)
+            if path is None:
                 _logger.warning(f"prompt dosyası eksik agent={agent_name} file={filename}")
                 values[filename] = ""
                 continue

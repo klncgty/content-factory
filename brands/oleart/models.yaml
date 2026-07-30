@@ -55,6 +55,7 @@ agents:
     model: openai/gpt-oss-120b
     # Fallback listesi AYNI sağlayıcı içinde denenir; Groq model adları burada geçersiz.
     fallback_models: [openai/gpt-oss-20b]
+    temperature: 0.3
     # DİKKAT — bu değeri düşürmeyin: gpt-oss bir reasoning modelidir ve max_tokens'ı
     # düşünme + metin arasında paylaşır (ölçüm: ~1300 token düşünme). 3500'e çekildiğinde
     # makale ~550 kelimede ORTASINDAN KESİLİYORDU (finish_reason=length).

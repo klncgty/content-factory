@@ -221,6 +221,10 @@ class QAReport(DomainModel):
 class EditorInput(DomainModel):
     article: Article
     link_plan: LinkPlan | None = None
+    research: ResearchNotes | None = None
+    """LLM kalite incelemesine (katman 3) verilir ki Editor makaledeki iddiaları
+    Research'ün `key_facts`'iyle karşılaştırıp kaynaksız/uydurma bilgiyi yakalayabilsin
+    (bkz. `EditorAgent._llm_quality_review`)."""
     retry_count: int = 0
     """Kaçıncı Writer denemesinin incelendiği — Orchestrator'ın retry döngüsü doldurur.
     EditorAgent bunu yalnızca `QAReport.retry_count`'a geçirir, karara etki etmez."""
@@ -295,3 +299,21 @@ class ScopeRejectionRecord(DomainModel):
     stage: str
     reason: str
     payload_snippet: str = ""
+
+
+class LLMCallRecord(DomainModel):
+    """Tek bir başarılı LLM çağrısının kaydı (bkz. `BaseLLMProvider._try_models`).
+
+    Gerçek dolar maliyeti burada hesaplanmaz — sağlayıcı/model fiyatlandırması dışarıda
+    değişir; bu satır o hesabı sağlayıcının kendi maliyet raporuyla (ör. OpenRouter
+    dashboard) eşleştirmeye yeter (bkz. ARCHITECTURE.md §16)."""
+
+    id: int | None = None
+    run_id: str
+    agent_name: str
+    provider: str
+    model: str
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    duration_ms: int = 0

@@ -16,7 +16,7 @@ Yalnızca şu JSON şemasına uyan bir nesne döndür, başka hiçbir açıklama
 
 ```json
 {
-  "group_id": "yukarıdaki izinli gruplardan birinin id'si",
+  "group_id": "olive_and_oil",
   "reason": "kısa gerekçe"
 }
 ```

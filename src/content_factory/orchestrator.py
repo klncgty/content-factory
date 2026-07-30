@@ -53,6 +53,11 @@ from content_factory.guards.scope_guard import ScopeGuard
 from content_factory.providers.image import ImageProviderError
 from content_factory.utils.logging import get_logger
 
+_BACKLOG_FETCH_LIMIT = 20
+"""Backlog'dan bir run'da kaç bekleyen konunun değerlendirileceği. TopicScout tek seferde
+en fazla 20 aday üretebildiği (bkz. `TopicScoutRequest.max_candidates`) için bu sınır
+pratikte tüm backlog'u kapsar; asıl işlevi patolojik bir birikimde sorguyu sınırlamaktır."""
+
 
 class PipelineError(RuntimeError):
     """Bir pipeline adımı, run'ı sürdürülemez kılan bir hatayla durdu."""
@@ -184,8 +189,77 @@ class PipelineOrchestrator:
         state.status = RunStatus.COMPLETED
 
     def _select_topic(self, state: RunState) -> Topic:
+        """Önce `topics_backlog`'a bakılır; orada kullanılabilir bir konu varsa TopicScout
+        HİÇ ÇAĞRILMAZ (bir LLM çağrısı tasarrufu). Backlog boş/bayatsa yeni adaylar
+        üretilir ve seçilmeyenler bir sonraki run için backlog'a yazılır."""
+        from_backlog = self._take_from_backlog(state)
+        if from_backlog is not None:
+            return from_backlog
+        return self._scout_new_topic(state)
+
+    def _take_from_backlog(self, state: RunState) -> Topic | None:
+        """Backlog'daki en uygun bekleyen konuyu döndürür, yoksa `None`.
+
+        Backlog kayıtları bayatlayabilir: bir konu kaydedildikten sonra ona benzer bir
+        makale yayınlanmış ya da `scope.yaml` daralmış olabilir. Bu yüzden bekleyen
+        konular kullanılmadan önce aynı deterministik süzgeçlerden (scope + novelty)
+        yeniden geçirilir; elenenler `stale` olarak işaretlenir ki her run'da tekrar
+        değerlendirilmesinler."""
+        store = self.context.state
+        if store is None:
+            return None
+
+        pending = store.get_pending_topics(self.context.brand, limit=_BACKLOG_FETCH_LIMIT)
+        if not pending:
+            return None
+
+        usable: list[Topic] = []
+        for topic in pending:
+            reason = self._backlog_reject_reason(topic)
+            if reason is None:
+                usable.append(topic)
+                continue
+            self.logger.info(f"backlog: {topic.title!r} bayatladı ({reason}) — stale")
+            if topic.id is not None:
+                store.mark_topic_status(topic.id, "stale")
+
+        if not usable:
+            # Hepsi bayatsa TopicScout'a düşülür — bayat bir konuyu zorla kullanmaktansa
+            # yeni aday üretmek doğru davranış.
+            self.logger.info("backlog: kullanılabilir konu kalmadı, TopicScout çağrılacak")
+            return None
+
+        state.step_history.append("topic_backlog")
+        selected = self._pick_topic(usable)
+        if selected.id is not None:
+            store.mark_topic_status(selected.id, "used")
+        self.logger.info(
+            f"backlog: {len(usable)} bekleyen konudan seçildi — {selected.title!r} "
+            f"(grup={selected.category}, skor={selected.score}); TopicScout atlandı"
+        )
+        return selected
+
+    def _backlog_reject_reason(self, topic: Topic) -> str | None:
+        """Bekleyen bir konunun artık kullanılamamasının gerekçesi, kullanılabilirse `None`.
+        Her iki kontrol de deterministiktir ve LLM çağırmaz."""
+        if self.scope_guard is not None:
+            result = self.scope_guard.pre_check(
+                title=topic.title, seed_keywords=topic.seed_keywords
+            )
+            if result.decision is not ScopeDecision.IN_SCOPE:
+                return "kapsam dışı kaldı"
+
+        guard = self._novelty_guard()
+        if guard is not None:
+            novelty = guard.check(title=topic.title, seed_keywords=topic.seed_keywords)
+            if novelty.is_duplicate:
+                return novelty.reason
+        return None
+
+    def _scout_new_topic(self, state: RunState) -> Topic:
         """TopicScout adayları üretir, `ScopeGuard.pre_check` deterministik olarak eler,
-        en yüksek skorlu onaylı aday seçilir (TopicScout adayları skora göre sıralı döndürür)."""
+        en yüksek skorlu onaylı aday seçilir (TopicScout adayları skora göre sıralı döndürür).
+        Seçilmeyen uygun adaylar backlog'a yazılır."""
         state.step_history.append("topic_scout")
         candidates = self.agents.topic_scout(TopicScoutRequest())
         self.logger.info(
@@ -217,21 +291,47 @@ class PipelineOrchestrator:
             f"{len(fresh)} tanesi yeni konu — "
             f"seçilen: {selected.title!r} (grup={selected.category}, skor={selected.score})"
         )
+        self._backlog_unselected(fresh, selected=selected)
         return selected
+
+    def _backlog_unselected(self, fresh: list[Topic], *, selected: Topic) -> None:
+        """Bu run'da kullanılmayan uygun adayları bir sonraki run için saklar.
+
+        Yalnızca `fresh` (kapsam onaylı + tekrar olmayan) adaylar yazılır — kapsam dışı
+        veya zaten yazılmış bir konuyu saklamanın faydası yok, sonraki run'da nasılsa
+        elenirdi. Backlog yalnızca TopicScout'un çalıştığı run'larda büyür; dolu olduğu
+        sürece TopicScout hiç çağrılmadığı için sınırsız birikme olmaz."""
+        store = self.context.state
+        if store is None:
+            return
+
+        leftovers = [topic for topic in fresh if topic.title != selected.title]
+        if not leftovers:
+            return
+
+        store.add_topic_candidates(leftovers)
+        self.logger.info(
+            f"backlog: {len(leftovers)} kullanılmayan aday sonraki run için kaydedildi -> "
+            f"{[topic.title for topic in leftovers]}"
+        )
+
+    def _novelty_guard(self) -> NoveltyGuard | None:
+        """Yayınlanmış makalelere karşı kurulmuş guard; StateStore yoksa veya hiç yayın
+        yapılmamışsa `None` (karşılaştırılacak bir şey yok)."""
+        store = self.context.state
+        if store is None:
+            return None
+        published = store.get_recent_articles(self.context.brand, limit=100)
+        return NoveltyGuard(published) if published else None
 
     def _drop_repeated_topics(self, approved: list[Topic]) -> list[Topic]:
         """Yayınlanmış makalelerle aynı konuyu tekrar eden adayları eler (bkz.
         `guards/novelty_guard.py`). Hepsi elenirse liste olduğu gibi döner: konu
         tekrarı yayını tamamen durduracak kadar ciddi bir hata değil, tercih meselesidir."""
-        state = self.context.state
-        if state is None:
+        guard = self._novelty_guard()
+        if guard is None:
             return approved
 
-        published = state.get_recent_articles(self.context.brand, limit=100)
-        if not published:
-            return approved
-
-        guard = NoveltyGuard(published)
         fresh: list[Topic] = []
         for candidate in approved:
             result = guard.check(title=candidate.title, seed_keywords=candidate.seed_keywords)
@@ -341,7 +441,9 @@ class PipelineOrchestrator:
         for attempt in range(max_retries + 1):
             state.step_history.append("editor")
             report = self.agents.editor(
-                EditorInput(article=article, link_plan=link_plan, retry_count=attempt)
+                EditorInput(
+                    article=article, link_plan=link_plan, research=research, retry_count=attempt
+                )
             )
             self.logger.info(
                 f"editor: karar={report.decision.value} kapsam={report.scope_decision.value} "

@@ -21,24 +21,6 @@ from content_factory.integrations.image_processing import derive_image_variants
 from content_factory.knowledge.loader import BrandKnowledge
 from content_factory.providers.image import ImageRequest
 
-_CATEGORY_VISUAL_HINTS: dict[str, str] = {
-    "olive_and_oil": (
-        "a bottle of extra virgin olive oil beside fresh olives and an olive branch "
-        "on a rustic wooden table"
-    ),
-    "wooden_products": (
-        "a handcrafted olive wood kitchen board and utensils on a linen cloth, "
-        "warm studio light"
-    ),
-}
-_DEFAULT_VISUAL_HINT = (
-    "olives and olive oil on a rustic wooden surface, warm natural tones"
-)
-"""Sahne tarifleri İNGİLİZCE tutulur: görsel modelleri (flux) İngilizce prompt'larda
-belirgin biçimde daha isabetli çalışıyor ve Türkçe metin verildiğinde onu görselin
-ÜZERİNE yazmaya çalışıyor (ölçüm: Türkçe prompt'la üretilen kapak, makale başlığını
-bozuk harflerle basılmış bir infografiğe çevirdi)."""
-
 _PHOTOGRAPHIC_STYLE = (
     "editorial food photography, natural window light, shallow depth of field, "
     "photorealistic, high detail. No text, no letters, no words, no labels, no logo, "
@@ -87,13 +69,13 @@ class ImageGeneratorAgent(BaseAgent[Article, Article]):
         """Görsel prompt'u yalnızca SAHNE tarif eder; makale başlığı prompt'a GİRMEZ.
 
         Başlık verildiğinde model onu görselin üzerine yazmaya çalışıyor ve makaleyle
-        alakasız, bozuk yazılı bir infografik üretiyordu (bkz. `_CATEGORY_VISUAL_HINTS`).
-        Konuyla bağ, makalenin kategorisine karşılık gelen sahne üzerinden kurulur —
-        marka bağlamı da (Türkçe olduğu için) prompt'a değil, yalnızca sahne seçimine
-        girer."""
+        alakasız, bozuk yazılı bir infografik üretiyordu. Konuyla bağ, makalenin
+        kategorisine karşılık gelen sahne üzerinden kurulur — sahneler markaya özgü
+        olduğu için `brands/{marka}/knowledge.yaml: image_scenes`'ten okunur; marka
+        bağlamı da (Türkçe olduğu için) prompt'a değil, yalnızca sahne seçimine girer."""
         del knowledge  # sahne seçimi kategoriden gelir; Türkçe marka metni prompt'a girmez
-        visual_hint = _CATEGORY_VISUAL_HINTS.get(article.category, _DEFAULT_VISUAL_HINT)
-        return f"{visual_hint}. {_PHOTOGRAPHIC_STYLE}"
+        scene = self.context.settings.knowledge.image_scene_for(article.category)
+        return f"{scene}. {_PHOTOGRAPHIC_STYLE}"
 
     def _staging_dir(self, slug: str) -> Path:
         run_dir = self.context.settings.resolve(

@@ -111,6 +111,21 @@ köklerine indirgeyip kapsama oranıyla karşılaştırır; Orchestrator eşiği
 Ayrıca seçim, **en son yayınlanandan farklı kategoriye** öncelik verir — aksi halde blog tek
 bir ürün eksenine (hep zeytinyağı) kayıyor ve markanın ahşap ürün tarafı hiç yazılmıyordu.
 
+### 2.2 Konu Havuzu — topics_backlog
+
+TopicScout her run'da 5 aday üretip 1'ini kullanıyor, kalan 4'ü çöpe gidiyordu; ertesi run
+aynı LLM çağrısı baştan yapılıyordu. Artık seçilmeyen **uygun** adaylar (kapsam onaylı +
+tekrar olmayan) `topics_backlog` tablosuna yazılır ve **backlog doluysa TopicScout hiç
+çağrılmaz** — bir LLM çağrısı tasarrufu ve daha az kota tüketimi.
+
+Backlog kayıtları bayatlayabilir: bir konu kaydedildikten sonra ona benzer bir makale
+yayınlanmış veya `scope.yaml` daralmış olabilir. Bu yüzden bekleyen konular kullanılmadan
+önce aynı deterministik süzgeçlerden (ScopeGuard pre-check + NoveltyGuard) **yeniden**
+geçirilir; elenenler `stale` işaretlenir ki her run'da tekrar değerlendirilmesinler. Hepsi
+bayatsa TopicScout'a düşülür — bayat bir konuyu zorla kullanmak yerine yeni aday üretmek
+doğru davranıştır. Backlog yalnızca TopicScout'un çalıştığı run'larda büyüdüğü için
+sınırsız birikme olmaz.
+
 ---
 
 ## 3. Knowledge Base
@@ -373,6 +388,13 @@ süresi dolana kadar sonraki çağrılarda hiç denenmeden atlanır (bkz. `provi
 ---
 
 ## 10. Çoklu Marka Mimarisi
+
+> Marka-özel her şey config'tedir; `content_factory` paketinde hiçbir markanın adı veya
+> konusu geçmez. Yeni bir marka eklemek için gereken üç şey: `brands/{marka}/*.yaml`
+> (özellikle `knowledge.yaml` — konu dosyaları, kategori eşlemesi, görsel sahneleri),
+> `knowledge/brands/{marka}/*.md` ve —gerekiyorsa— `brands/{marka}/prompts/{agent}/`
+> altında prompt override'ları. Ortak `prompts/` dosyaları marka-nötrdür ve override
+> dosya bazında çalışır (bkz. `prompts/loader.py::PromptLoader.resolve_file`).
 
 Sistem, Oleart için değil, Oleart'ı **ilk örnek** olarak barındıran genel bir motor olarak
 tasarlanır. Ayrım netleşir:
@@ -645,6 +667,11 @@ sequenceDiagram
 - Editor + ScopeGuard birlikte zorunlu geçit — onaysız/kapsam-dışı hiçbir içerik yayınlanmaz.
 - Sağlık/etiket iddiası kontrolü (`brand.yaml: forbidden_claims`) — Türkiye reklam mevzuatı
   riski.
+- Sayısal iddia zeminlemesi (`guards/grounding_guard.py`, Editor katman 1): makaledeki
+  birimli sayılar (`%`, `°C`, `ay`…) knowledge base + araştırma notlarında geçmiyorsa
+  reddedilir. LLM incelemesi bu vakaları kaçırıyordu — makul görünen uydurma bir değeri
+  ("ideal saklama 14-18°C") onaylıyordu; sayının kaynakta geçip geçmediği ise
+  deterministik olarak ölçülebilir.
 - Duplicate/keyword cannibalization kontrolü (SQLite `keywords` tablosu, `UNIQUE` benzeri
   mantık).
 - LinkerAgent'ın eski makalelere dokunuşu yalnızca yapılandırılmış frontmatter alanıyla

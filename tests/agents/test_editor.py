@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 
 import pytest
@@ -13,9 +14,12 @@ from content_factory.domain.models import (
     EditorInput,
     LinkPlan,
     QADecision,
+    ResearchNotes,
     ScopeDecision,
     ScopeRejectionRecord,
+    Topic,
 )
+from content_factory.settings.schemas import GroundingConfig
 
 from ..support.stub_llm import StubLLMProvider
 
@@ -39,6 +43,21 @@ def _article(**overrides: object) -> Article:
     return Article(**{**defaults, **overrides})  # type: ignore[arg-type]
 
 
+def test_llm_quality_review_receives_research_key_facts(agent_context: AgentContext) -> None:
+    stub = StubLLMProvider(responses=[_IN_SCOPE, _APPROVED])
+    agent_context.llm = stub
+    agent = EditorAgent(agent_context)
+    research = ResearchNotes(
+        topic=Topic(brand="oleart", title="Zeytinyağı Donar mı?"),
+        key_facts=["Zeytinyağı 4°C altında donmaya başlar."],
+    )
+
+    agent(EditorInput(article=_article(), research=research))
+
+    quality_review_prompt = stub.requests[1].messages[0].content
+    assert "Zeytinyağı 4°C altında donmaya başlar." in quality_review_prompt
+
+
 def test_approves_clean_article(agent_context: AgentContext) -> None:
     # 1. yanıt ScopeGuard.post_check'e, 2. yanıt kalite incelemesine gider.
     agent_context.llm = StubLLMProvider(responses=[_IN_SCOPE, _APPROVED])
@@ -60,6 +79,71 @@ def test_rejects_on_forbidden_word(agent_context: AgentContext) -> None:
 
     assert report.decision is QADecision.REJECTED
     assert any("mucize" in reason for reason in report.reasons)
+
+
+def _with_grounding_enforced(context: AgentContext) -> AgentContext:
+    """`engine.yaml: grounding.enforce` açıkken bir bağlam üretir (varsayılan kapalıdır)."""
+    context.settings = dataclasses.replace(
+        context.settings,
+        engine=context.settings.engine.model_copy(
+            update={"grounding": GroundingConfig(enforce=True)}
+        ),
+    )
+    return context
+
+
+def test_rejects_on_ungrounded_numeric_claim(agent_context: AgentContext) -> None:
+    """`enforce` açıkken GroundingGuard katman 1'dedir: LLM kalite incelemesi (2. yanıt)
+    hiç çalışmadan reddedilir — bkz. `guards/grounding_guard.py`."""
+    agent_context = _with_grounding_enforced(agent_context)
+    agent_context.llm = StubLLMProvider(responses=[_IN_SCOPE])
+    agent = EditorAgent(agent_context)
+
+    article = _article(body_markdown=f"{_body()} İdeal saklama aralığı 14-18°C'dir.")
+    report = agent(EditorInput(article=article))
+
+    assert report.decision is QADecision.REJECTED
+    assert any("14-18°C" in reason for reason in report.reasons)
+
+
+def test_ungrounded_claim_only_warns_when_enforce_is_off(agent_context: AgentContext) -> None:
+    """Varsayılan (uyarı) modda zeminsiz sayı bulguları karara KATILMAZ — guard'ın
+    gerçek makalelerdeki isabeti yayın turunu riske atmadan ölçülebilsin diye."""
+    agent_context.llm = StubLLMProvider(responses=[_IN_SCOPE, _APPROVED])
+    agent = EditorAgent(agent_context)
+
+    article = _article(body_markdown=f"{_body()} İdeal saklama aralığı 14-18°C'dir.")
+    report = agent(EditorInput(article=article))
+
+    assert agent_context.settings.engine.grounding.enforce is False
+    assert report.decision is QADecision.APPROVED
+    assert report.reasons == []
+
+
+def test_grounded_numeric_claim_does_not_block_approval(agent_context: AgentContext) -> None:
+    """Knowledge'da geçen bir sayı (duman noktası 190-210°C) reddedilmemeli."""
+    agent_context.llm = StubLLMProvider(responses=[_IN_SCOPE, _APPROVED])
+    agent = EditorAgent(agent_context)
+
+    article = _article(body_markdown=f"{_body()} Duman noktası 190-210°C aralığındadır.")
+    report = agent(EditorInput(article=article))
+
+    assert report.decision is QADecision.APPROVED
+
+
+def test_research_key_facts_ground_numeric_claims(agent_context: AgentContext) -> None:
+    """Araştırma notlarındaki bir sayı, knowledge'da geçmese de iddiayı zeminler."""
+    agent_context.llm = StubLLMProvider(responses=[_IN_SCOPE, _APPROVED])
+    agent = EditorAgent(agent_context)
+    research = ResearchNotes(
+        topic=Topic(brand="oleart", title="Sele Zeytini"),
+        key_facts=["Sele zeytini salamurada yaklaşık 7 ay bekletilir."],
+    )
+
+    article = _article(body_markdown=f"{_body()} Sele zeytini 7 ay salamurada kalır.")
+    report = agent(EditorInput(article=article, research=research))
+
+    assert report.decision is QADecision.APPROVED
 
 
 def test_rejects_on_forbidden_claim(agent_context: AgentContext) -> None:

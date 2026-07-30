@@ -51,12 +51,25 @@ class RunArtifactsConfig(YamlModel):
     retention_days: int = 90
 
 
+class GroundingConfig(YamlModel):
+    """`GroundingGuard`'ın (bkz. `guards/grounding_guard.py`) yaptırım modu."""
+
+    enforce: bool = False
+    """`False` (varsayılan): zeminsiz sayılar yalnızca loglanır, makale reddedilmez.
+    `True`: Editor makaleyi reddeder ve Writer'a düzeltme geri bildirimi gider.
+
+    Varsayılanın kapalı olması bilinçli: guard yeni bir YAYIN GEÇİDİ ve yanlış pozitifi
+    bir yayın turunu boşa harcar. Önce bir süre uyarı modunda çalıştırıp gerçek
+    makalelerdeki isabetini ölçmek, sonra açmak doğru sıralama."""
+
+
 class EngineConfig(YamlModel):
     retries: RetriesConfig = Field(default_factory=RetriesConfig)
     timeouts: TimeoutsConfig = Field(default_factory=TimeoutsConfig)
     image_derivatives: dict[str, ImageDerivativeSpec] = Field(default_factory=dict)
     state_store: StateStoreConfig = Field(default_factory=StateStoreConfig)
     run_artifacts: RunArtifactsConfig = Field(default_factory=RunArtifactsConfig)
+    grounding: GroundingConfig = Field(default_factory=GroundingConfig)
 
 
 # --------------------------------------------------------------------------- config/models.yaml
@@ -177,6 +190,41 @@ class SeoConfig(YamlModel):
     competitor_domains: list[str] = Field(default_factory=list)
     internal_linking: InternalLinkingConfig = Field(default_factory=InternalLinkingConfig)
     publish_cadence: str = "weekly"
+
+
+# ----------------------------------------------------------------------- brands/{b}/knowledge.yaml
+
+
+class TopicFileSpec(YamlModel):
+    """Markanın konusuna özgü bir knowledge dosyası. `field`, agent'ların
+    `knowledge.compose("olive_oil", ...)` gibi çağrılarında kullandığı addır."""
+
+    field: str
+    filename: str
+    description: str = ""
+
+
+class KnowledgeConfig(YamlModel):
+    """Markanın KONUSUNU tanımlayan config — motor kodunda marka-özel sabit kalmaması
+    için (bkz. `brands/oleart/knowledge.yaml`). Ton/yazım kuralları gibi her markada
+    bulunan dosyalar burada değil, `knowledge/loader.py: CORE_FILES` içindedir."""
+
+    brand: str = ""
+    schema_version: int = 1
+    topic_files: list[TopicFileSpec] = Field(default_factory=list)
+    category_knowledge: dict[str, list[str]] = Field(default_factory=dict)
+    default_knowledge: list[str] = Field(default_factory=list)
+    grounding_fields: list[str] = Field(default_factory=list)
+    image_scenes: dict[str, str] = Field(default_factory=dict)
+    default_image_scene: str = ""
+
+    def knowledge_fields_for(self, category: str | None) -> list[str]:
+        """ResearchAgent: kategoriye karşılık gelen konu dosyaları."""
+        return self.category_knowledge.get(category or "", self.default_knowledge)
+
+    def image_scene_for(self, category: str | None) -> str:
+        """ImageGeneratorAgent: kategoriye karşılık gelen görsel sahnesi."""
+        return self.image_scenes.get(category or "", self.default_image_scene)
 
 
 # ------------------------------------------------------------------------ brands/{b}/schedule.yaml

@@ -14,6 +14,7 @@ import yaml
 from content_factory.settings.schemas import (
     BrandConfig,
     EngineConfig,
+    KnowledgeConfig,
     ModelsConfig,
     PublishConfig,
     ScheduleConfig,
@@ -63,6 +64,7 @@ class Settings:
     publish: PublishConfig
     seo: SeoConfig
     schedule: ScheduleConfig
+    knowledge: KnowledgeConfig
 
     # knowledge/brands/{brand}/ — sabit bir sistem geneli kural, brand.yaml'da
     # yapılandırılmaz (bkz. content_factory.knowledge.loader.KnowledgeLoader, ki o da
@@ -96,6 +98,7 @@ class Settings:
         publish = PublishConfig.model_validate(_load_yaml(brand_dir / "publish.yaml"))
         seo = SeoConfig.model_validate(_load_yaml(brand_dir / "seo.yaml"))
         schedule = ScheduleConfig.model_validate(_load_yaml(brand_dir / "schedule.yaml"))
+        knowledge = KnowledgeConfig.model_validate(_load_yaml(brand_dir / "knowledge.yaml"))
 
         return cls(
             root=root,
@@ -107,6 +110,7 @@ class Settings:
             publish=publish,
             seo=seo,
             schedule=schedule,
+            knowledge=knowledge,
         )
 
     def resolve(self, path_template: str, **extra: str) -> Path:

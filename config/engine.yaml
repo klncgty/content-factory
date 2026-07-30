@@ -39,6 +39,20 @@ image_derivatives:
     size: [1200, 630]
     format: webp
 
+# GroundingGuard — makaledeki birimli sayıların (%, °C, ay…) knowledge base'de gerçekten
+# geçip geçmediğini deterministik olarak ölçer (bkz. guards/grounding_guard.py).
+#
+# enforce: false ile başlıyoruz. Guard yeni bir YAYIN GEÇİDİ; yayınlanmış 4 makale
+# üzerinde ölçüldüğünde 4 gerçek uydurma yakaladı ve yanlış pozitif üretmedi, ama bu
+# ölçüm geçmiş metinler üzerinde yapıldı. Canlıda birkaç tur "logla ama reddetme"
+# modunda çalıştırıp gerçek isabetini gördükten sonra true'ya çekilecek — erken açmak,
+# bir yanlış pozitifin tüm yayın turunu (Writer 3 deneme + needs_review) harcaması
+# demek olurdu.
+#
+# Uyarı modunda run log'unda şu satır aranır:  editor: N kaynaksız sayısal iddia
+grounding:
+  enforce: false
+
 state_store:
   backend: sqlite
   path_template: "data/{brand}/content_factory.db"
