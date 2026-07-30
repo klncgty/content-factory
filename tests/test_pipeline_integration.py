@@ -90,7 +90,18 @@ def pipeline(agent_context: AgentContext, tmp_path: Path):
     repo_root.mkdir()
     settings = agent_context.settings
     agent_context.settings = dataclasses.replace(
-        settings, publish=settings.publish.model_copy(update={"target_repo_path": str(repo_root)})
+        settings,
+        publish=settings.publish.model_copy(
+            update={
+                "target_repo_path": str(repo_root),
+                # Strateji burada sabitlenir: test "yayın, yapılandırılan stratejiyle git
+                # provider'ına gidiyor mu" sorusunu doğrular — marka dosyası bugün
+                # direct-push'ta olsa da bu senaryo PR yolunu kapsamalı.
+                "git": settings.publish.git.model_copy(
+                    update={"publish_strategy": "pr-then-automerge"}
+                ),
+            }
+        ),
     )
     agent_context.llm = StubLLMProvider(responses=list(_LLM_RESPONSES))
     agent_context.git = StubGitProvider()

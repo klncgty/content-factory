@@ -37,6 +37,9 @@ def _output(**overrides: object) -> PublisherOutput:
 
 def test_returns_publish_result_from_provider(agent_context: AgentContext) -> None:
     agent_context.git = StubGitProvider()
+    # Strateji testte sabitlenir: doğrulanan şey GitAgent'ın yapılandırılan stratejiyi
+    # `PublishResult`'a taşıması, markanın o gün hangi stratejide olduğu değil.
+    _set_git_config(agent_context, publish_strategy="pr-then-automerge")
 
     result = GitAgent(agent_context)(_output())
 

@@ -17,6 +17,26 @@ forbidden_words:
   - "kesin çözüm"
   - "%100 garanti"
 
+  # Türkçe karşılığı olan İngilizce terimler. Gerekçe: hedef kitle son tüketici, teknik
+  # jargon halka hitap etmiyor ("Zeytinyağı Smoke Pointı Nedir?" gibi bir başlık okuru
+  # uzaklaştırır). Karşılıkları prompts/writer/system.md'de tablo hâlinde veriliyor.
+  #
+  # Bu liste birebir (case-insensitive) aranır, yani bir güvenlik ağıdır — kapsamlı
+  # olması beklenmez. Listede olmayan İngilizce terimleri Editor'ın LLM katmanı yakalar
+  # (bkz. prompts/editor/system.md), üretim tarafında ise TopicScout ve Writer prompt'ları
+  # baştan engeller. Türkçeleşmiş sözcükler (polifenol, antioksidan, aroma) serbesttir;
+  # burada yasaklananlar İngilizce yazımlarıdır.
+  - "smoke point"      # -> duman noktası
+  - "cold press"       # -> soğuk sıkım
+  - "extra virgin"     # -> natürel sızma
+  - "polyphenol"       # -> polifenol
+  - "antioxidant"      # -> antioksidan
+  - "free radical"     # -> serbest radikal
+  - "superfood"        # -> süper besin
+  - "shelf life"       # -> raf ömrü
+  - "raw material"     # -> hammadde
+  - "food grade"       # -> gıdayla temasa uygun
+
 # EditorAgent bu listeye karşı deterministik kontrol yapar.
 # Zeytinyağı/ahşap ürünler için kanıtsız sağlık/tedavi iddiaları Türkiye reklam mevzuatına
 # aykırı olabilir — kritik guardrail.

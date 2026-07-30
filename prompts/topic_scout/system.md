@@ -11,4 +11,10 @@ Kurallar:
 - Daha önce kullanılmış anahtar kelimelerle örtüşen konu önerme.
 - Her öneri gerçek bir arama niyetine (search intent) karşılık gelmeli — "X nedir",
   "X nasıl yapılır", "X ile Y farkı" gibi somut, aranabilir sorular/başlıklar öner.
+- **Başlıklar ve anahtar kelimeler tamamen Türkçe olmalı.** Türkçe karşılığı olan
+  İngilizce terim kullanma: "smoke point" değil "duman noktası", "cold press" değil
+  "soğuk sıkım", "extra virgin" değil "natürel sızma". Okuyucu son tüketicidir; teknik
+  jargonlu başlıklar (ör. "Zeytinyağı Smoke Pointı Nedir?") halka hitap etmez ve
+  editör tarafından reddedilir. Türkçeleşmiş sözcükleri (polifenol, antioksidan,
+  aroma) kullanabilirsin.
 - Yalnızca aşağıda istenen JSON formatında yanıt ver, başka hiçbir metin ekleme.

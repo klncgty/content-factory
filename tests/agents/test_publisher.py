@@ -24,12 +24,19 @@ from content_factory.utils import frontmatter
 @pytest.fixture
 def target_repo(tmp_path: Path, agent_context: AgentContext) -> Path:
     """`agent_context`'i geçici bir hedef repoya yönlendirir — gerçek oleart.co
-    çalışma kopyasına yazmadan Publisher'ın dosya çıktısını diff'lemek için."""
+    çalışma kopyasına yazmadan Publisher'ın dosya çıktısını diff'lemek için.
+
+    `public_root` de burada sabitlenir: aşağıdaki testler URL türetmenin *davranışını*
+    doğrular, markanın o gün hangi değerde olduğunu değil (bkz. `_static_url_base`;
+    brands/oleart bugün `.` kullanıyor çünkü site repo kökünden servis ediliyor)."""
     repo_root = tmp_path / "site"
     repo_root.mkdir()
     settings = agent_context.settings
     agent_context.settings = dataclasses.replace(
-        settings, publish=settings.publish.model_copy(update={"target_repo_path": str(repo_root)})
+        settings,
+        publish=settings.publish.model_copy(
+            update={"target_repo_path": str(repo_root), "public_root": "public"}
+        ),
     )
     return repo_root
 
@@ -148,6 +155,40 @@ def test_copies_images_and_writes_public_urls(
     )
     assert fields["cover_image"] == "/blog/images/zeytinyagi-donar-mi/cover.webp"
     assert fields["og_image"] == "/blog/images/zeytinyagi-donar-mi/og-image.webp"
+
+
+def test_public_root_dot_keeps_full_image_path(
+    agent_context: AgentContext, target_repo: Path, tmp_path: Path
+) -> None:
+    """oleart.co bir statik site jeneratörü DEĞİL, repo kökünü olduğu gibi servis ediyor —
+    yani `public/` URL'in gerçek bir parçası. `public_root: "."` bu durumu ifade eder ve
+    hiçbir şey kırpılmamalıdır (bkz. brands/oleart/publish.yaml; yanlış değerle üretilen
+    görsel URL'leri canlıda 404 veriyordu)."""
+    settings = agent_context.settings
+    agent_context.settings = dataclasses.replace(
+        settings, publish=settings.publish.model_copy(update={"public_root": "."})
+    )
+
+    staging = tmp_path / "staging-public-root"
+    staging.mkdir()
+    for name in ("cover.webp", "thumbnail.webp", "og_image.webp"):
+        (staging / name).write_bytes(b"fake-image")
+
+    article = _article(
+        image=ImageData(
+            cover_path=str(staging / "cover.webp"),
+            thumbnail_path=str(staging / "thumbnail.webp"),
+            og_image_path=str(staging / "og_image.webp"),
+            alt_text="Zeytinyağı şişesi",
+        )
+    )
+    PublisherAgent(agent_context)(PublisherInput(article=article))
+
+    fields, _ = frontmatter.split(
+        (target_repo / "content/blog/2026-07-30-zeytinyagi-donar-mi.md").read_text("utf-8")
+    )
+    assert fields["cover_image"] == "/public/blog/images/zeytinyagi-donar-mi/cover.webp"
+    assert fields["og_image"] == "/public/blog/images/zeytinyagi-donar-mi/og-image.webp"
 
 
 def test_publishes_without_images(agent_context: AgentContext, target_repo: Path) -> None:
