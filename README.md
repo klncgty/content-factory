@@ -1,4 +1,6 @@
 # Content Factory
+![Uploading Görüntü.jpeg…]()
+
 
 Marka-bağımsız, çoklu markaya genişleyebilecek otonom AI blog/SEO içerik üretim motoru.
 İlk (ve şu an tek) örnek marka: **Oleart** (`brands/oleart/`, `knowledge/brands/oleart/`).
