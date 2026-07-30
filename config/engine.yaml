@@ -1,7 +1,13 @@
 # Engine-seviyesi (marka-bağımsız) çalışma zamanı ayarları.
 
 retries:
-  editor_reject_max_retries: 2      # Writer'a geri dönüş sayısı
+  # Writer'a geri dönüş sayısı. 3 (= toplam 4 taslak denemesi), çünkü ölçüm: writer
+  # (gpt-oss-120b) ilk taslakta 800 kelime alt sınırının ALTINDA kalmaya eğilimli
+  # (30.07.2026 run'larında 632 / 671 / 720 / 742 kelime) ama editör geri bildirimiyle
+  # yakınsıyor (632 -> 742, 671 -> 927). 2 denemede bu yakınsama yarıda kalıp run
+  # needs_review ile kapanıyordu. Kalıcı çözüm daha uzun yazan bir writer modeli veya
+  # min_word_count'un düşürülmesidir; bu değer o karara kadarki tampon.
+  editor_reject_max_retries: 3
   scope_reject_max_retries: 2       # TopicScout'a geri dönüş sayısı
   llm_call_max_retries: 3           # ağ/rate-limit hataları için
   # Asıl model VE tüm fallback'ler rate limit'e takıldığında toplam bekleme bütçesi.
