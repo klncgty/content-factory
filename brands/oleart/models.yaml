@@ -76,17 +76,23 @@ agents:
     fallback_models: []
 
   editor:
-    provider: groq
-    # Writer gpt-oss-120b; editor bilinçli olarak farklı bir aile (llama).
-    model: llama-3.3-70b-versatile
-    # Zincirin TAMAMI reasoning YAPMAYAN modellerden kurulur. qwen3.6 ve gpt-oss-20b
-    # denendi ve editor rolünde kullanılamaz: prompt ~5k token olduğu için bu role
-    # düşen max_tokens bütçesi (aşağıya bak) düşünmeye yetmiyor, modeller
-    # `finish_reason=length` ile BOŞ içerik döndürüyor ve zincir tükeniyordu.
-    fallback_models: [llama-3.1-8b-instant]
-    # 900: ölçülen çıktı ~250 token. Üst sınırı 8b-instant'ın TPM tavanı belirliyor
-    # (6k) — prompt ~5k + 900 = 5.9k. Daha büyük bir değer her çağrıda 413 alıp
-    # provider'ın daraltma turuna girmesine yol açıyor.
+    # Writer ile aynı gerekçeyle Replicate'e taşındı (30.07.2026): editor prompt'u makalenin
+    # TAMAMINI taşıdığı için ~5.5k token; Groq'ta llama-3.3-70b'nin dakikalık kotası
+    # dolduğunda zincir 6000 TPM tavanlı llama-3.1-8b-instant'a düşüyor ve istek oraya
+    # SIĞMIYOR (ölçülen: "Limit 6000, Requested 6411" -> 413 -> run öldü, hiçbir şey
+    # yayınlanmadı). Replicate'te dakikalık token tavanı yok.
+    #
+    # Model seçimi editor'ın "writer'dan farklı göz" tasarımını korur: writer gpt-oss-120b,
+    # editor llama ailesi. Replicate'te ölçüldü — temiz JSON döndürüyor, ~2.5 sn.
+    provider: replicate
+    model: meta/meta-llama-3-70b-instruct
+    # Fallback listesi AYNI sağlayıcı içinde denenir; buraya Groq model adı YAZILAMAZ.
+    # Boş bırakılıyor: reasoning yapan modeller (gpt-oss, qwen3.6) editor rolünde
+    # kullanılamıyor — prompt ~5k token olduğu için max_tokens bütçesi düşünmeye
+    # gidiyor ve `finish_reason=length` ile BOŞ içerik dönüyordu.
+    fallback_models: []
+    # 900: ölçülen çıktı ~250 token. Groq'tayken üst sınırı 8b-instant'ın 6k TPM tavanı
+    # belirliyordu; Replicate'te böyle bir tavan yok, değer yalnızca çıktı bütçesi.
     max_tokens: 900
 
   scope_guard:

@@ -27,14 +27,26 @@ groups:
 
   - id: wooden_products
     label: "Zeytin Ağacından Ahşap Ürünler"
+    # Eşleşme birebir alt dize aramasıdır (ScopeGuard sert bir allowlist'tir, kasıtlı
+    # olarak gevşek/köke indirgeyen bir arama yapmaz). Türkçe eklemeli bir dil olduğu
+    # için tekil ve çoğul biçimler AYRI AYRI yazılmalı: yalnızca "kesme tahtaları"
+    # yazılıyken "Zeytin Ağacı Kesme Tahtası Bakımı" başlığı bu grupla eşleşmiyor,
+    # olive_and_oil'deki "zeytin ağacı" ifadesine düşüp yanlış kategoriye giriyordu.
     topics:
       - zeytin ağacı kesme tahtaları
+      - zeytin ağacı kesme tahtası
       - zeytin ağacı sunum tahtaları
+      - zeytin ağacı sunum tahtası
       - zeytin ağacı mutfak gereçleri
       - zeytin ağacı kaşıklar
+      - zeytin ağacı kaşığı
       - zeytin ağacı spatulalar
+      - zeytin ağacı spatulası
       - zeytin ağacı servis ürünleri
+      - zeytin ağacı servis ürünü
       - zeytin ağacı bakım rehberleri
+      - ahşap kesme tahtası
+      - ahşap mutfak gereçleri
 
 # Editor'ün semantik (LLM) sınıflandırma kontrolüne few-shot negatif örnek sağlar.
 # Kapsam dışı örnekler — bunlar yayınlanmaz.

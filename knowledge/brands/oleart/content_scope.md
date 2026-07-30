@@ -27,13 +27,26 @@ dışındaki hiçbir konu — ne kadar ilgili görünürse görünsün — işle
 - Zeytin çeşitleri
 
 ## Zeytin Ağacından Ahşap Ürünler
+
+Tekil ve çoğul biçimler ayrı ayrı listelenir: eşleşme birebir alt dize aramasıdır ve
+Türkçe eklemeli bir dil olduğu için yalnızca "kesme tahtaları" yazılıyken "kesme tahtası"
+geçen bir başlık bu grupla eşleşmiyor, "zeytin ağacı" ifadesi üzerinden yanlışlıkla
+zeytinyağı grubuna düşüyordu.
+
 - Zeytin ağacı kesme tahtaları
+- Zeytin ağacı kesme tahtası
 - Zeytin ağacı sunum tahtaları
+- Zeytin ağacı sunum tahtası
 - Zeytin ağacı mutfak gereçleri
 - Zeytin ağacı kaşıklar
+- Zeytin ağacı kaşığı
 - Zeytin ağacı spatulalar
+- Zeytin ağacı spatulası
 - Zeytin ağacı servis ürünleri
+- Zeytin ağacı servis ürünü
 - Zeytin ağacı bakım rehberleri
+- Ahşap kesme tahtası
+- Ahşap mutfak gereçleri
 
 ## Kapsam Dışı Örnekler (reddedilir)
 - Zeytinyağı bağlamı olmadan genel sağlık/diyet tavsiyeleri

@@ -37,14 +37,25 @@ class ScopeGuard:
         """Deterministik anahtar kelime eşleştirmesi — `scope.yaml groups[].topics`'e karşı.
         Hiçbir LLM çağrısı yapmaz (bkz. ARCHITECTURE.md §2 tablosu)."""
         haystack = " ".join([title, *seed_keywords]).lower()
+
+        # EN UZUN eşleşme kazanır, ilk eşleşme değil: gruplar birbirinin alt dizesi olan
+        # ifadeler içerebiliyor ("zeytin ağacı" olive_and_oil'de, "zeytin ağacı mutfak
+        # gereçleri" wooden_products'ta). İlk-eşleşme kuralıyla her ahşap ürün konusu
+        # zeytinyağı grubuna düşüyordu; bu da hem kategori rotasyonunu (orchestrator)
+        # hem görsel sahne seçimini (image_generator) yanlış besliyordu.
+        best: tuple[int, str, str] | None = None  # (uzunluk, grup id, eşleşen topic)
         for group in self._scope.groups:
             for topic in group.topics:
-                if topic.lower() in haystack:
-                    return ScopeCheckResult(
-                        decision=ScopeDecision.IN_SCOPE,
-                        matched_group=group.id,
-                        reason=f"'{topic}' anahtar kelimesiyle eşleşti",
-                    )
+                lowered = topic.lower()
+                if lowered in haystack and (best is None or len(lowered) > best[0]):
+                    best = (len(lowered), group.id, topic)
+
+        if best is not None:
+            return ScopeCheckResult(
+                decision=ScopeDecision.IN_SCOPE,
+                matched_group=best[1],
+                reason=f"'{best[2]}' anahtar kelimesiyle eşleşti",
+            )
         return ScopeCheckResult(
             decision=ScopeDecision.OUT_OF_SCOPE,
             reason="scope.yaml içindeki hiçbir grup/anahtar kelimeyle eşleşmedi",
