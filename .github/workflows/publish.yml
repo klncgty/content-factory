@@ -49,10 +49,15 @@ jobs:
         run: uv sync
 
       - name: Git kimliği (commit için zorunlu)
+        # E-posta bir GitHub hesabına eşlenmeli. Sebep hedef repoda: oleart.co Vercel'de
+        # barındırılıyor ve Vercel, author e-postasını bir hesapla eşleştiremediği
+        # commit'lerin deploy'unu engelliyor — 30.07.2026'da makale main'e girdi ama siteye
+        # çıkmadı ("commit email ... could not be matched to a GitHub account").
+        # İsim bot olarak kalıyor; eşleşmeyi sağlayan alan e-postadır.
         run: |
           for repo in . oleart.co; do
             git -C "$repo" config user.name "content-factory[bot]"
-            git -C "$repo" config user.email "content-factory@users.noreply.github.com"
+            git -C "$repo" config user.email "cgtyklnc@gmail.com"
           done
 
       - name: Pipeline
