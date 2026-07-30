@@ -30,6 +30,7 @@ class TopicScoutAgent(BaseAgent[TopicScoutRequest, list[Topic]]):
             products=knowledge.get_products(),
             seed_keyword_clusters=self._format_seed_clusters(),
             used_keywords=", ".join(self._collect_used_keywords()) or "(henüz yok)",
+            published_titles=self._format_published_titles(),
             max_candidates=str(input_data.max_candidates),
         )
         content = self.call_llm(
@@ -50,6 +51,17 @@ class TopicScoutAgent(BaseAgent[TopicScoutRequest, list[Topic]]):
         if not clusters:
             return "(tanımlı küme yok)"
         return "\n".join(f"- ({c.group}) {', '.join(c.seed_keywords)}" for c in clusters)
+
+    def _format_published_titles(self) -> str:
+        """Anahtar kelime listesi tek başına yetmiyor: model aynı konuyu farklı kelimelerle
+        tekrar öneriyordu (bkz. guards/novelty_guard.py). Başlıkları görmek modelin işini
+        kolaylaştırır — ama garanti değildir, asıl eleme NoveltyGuard'da deterministik yapılır."""
+        state = self.context.state
+        if state is None:
+            return "(henüz yok)"
+        recent = state.get_recent_articles(self.context.brand, limit=20)
+        titles = [f"- ({article.category}) {article.title}" for article in recent if article.title]
+        return "\n".join(titles) or "(henüz yok)"
 
     def _collect_used_keywords(self) -> list[str]:
         state = self.context.state

@@ -97,6 +97,20 @@ sağlar.
 `ScopeGuard` marka-parametrik bir bileşendir: `scope.yaml`'ı hangi markanın çağırdığına göre
 okur, kod içinde "oleart" veya "zeytin" gibi hiçbir sabit değer bulunmaz.
 
+### 2.1 Konu Tekrarı — NoveltyGuard
+
+Kapsamın ikizi olan sorun: makale kapsam İÇİNDE ama **zaten yazılmış** bir konunun farklı
+kelimelerle tekrarı. Aynı gerekçeyle (bkz. §1) bu da bir prompt talimatına bırakılmaz —
+TopicScout'un prompt'unda "tekrar etme" yazmasına rağmen model üç ardışık run'da aynı konuyu
+önerdi ("Erken Hasat Zeytinyağı ile Yemek Pişirmenin Faydaları" → "... Yemeklerde Nasıl
+Kullanılır"). StateStore'un tekrar kontrolü **birebir** anahtar kelime eşleşmesi olduğu için
+bunlar filtreden geçiyordu.
+
+`NoveltyGuard` (bkz. `guards/novelty_guard.py`) yayınlanmış başlıklarla aday başlığı kelime
+köklerine indirgeyip kapsama oranıyla karşılaştırır; Orchestrator eşiği aşan adayları eler.
+Ayrıca seçim, **en son yayınlanandan farklı kategoriye** öncelik verir — aksi halde blog tek
+bir ürün eksenine (hep zeytinyağı) kayıyor ve markanın ahşap ürün tarafı hiç yazılmıyordu.
+
 ---
 
 ## 3. Knowledge Base

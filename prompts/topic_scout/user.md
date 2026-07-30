@@ -14,6 +14,15 @@ $seed_keyword_clusters
 
 $used_keywords
 
+## Zaten Yayınlanmış Makaleler (bu konuları TEKRAR ETME)
+
+$published_titles
+
+Bir konuyu farklı kelimelerle yeniden yazmak da tekrardır: "X'in faydaları" yayınlandıysa
+"X nasıl kullanılır" YENİ BİR KONU DEĞİLDİR. Yukarıdaki listeden farklı bir konu ekseni
+seç ve markanın iki ürün grubunu (zeytin/zeytinyağı ve zeytin ağacından ahşap ürünler)
+dengeli kullan — son yayınlar hangi gruptaysa diğer gruba ağırlık ver.
+
 ## Görev
 
 $max_candidates adet aday konu üret. Her biri için:

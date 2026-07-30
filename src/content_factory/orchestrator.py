@@ -48,6 +48,7 @@ from content_factory.domain.models import (
     Topic,
     WriterInput,
 )
+from content_factory.guards.novelty_guard import NoveltyGuard
 from content_factory.guards.scope_guard import ScopeGuard
 from content_factory.providers.image import ImageProviderError
 from content_factory.utils.logging import get_logger
@@ -209,12 +210,61 @@ class PipelineOrchestrator:
         if not approved:
             raise PipelineError("topic_scout: kapsam onaylı aday konu üretilemedi")
 
-        selected = approved[0]
+        fresh = self._drop_repeated_topics(approved)
+        selected = self._pick_topic(fresh)
         self.logger.info(
-            f"scope_guard: {len(approved)}/{len(candidates)} aday kapsamda — "
+            f"scope_guard: {len(approved)}/{len(candidates)} aday kapsamda, "
+            f"{len(fresh)} tanesi yeni konu — "
             f"seçilen: {selected.title!r} (grup={selected.category}, skor={selected.score})"
         )
         return selected
+
+    def _drop_repeated_topics(self, approved: list[Topic]) -> list[Topic]:
+        """Yayınlanmış makalelerle aynı konuyu tekrar eden adayları eler (bkz.
+        `guards/novelty_guard.py`). Hepsi elenirse liste olduğu gibi döner: konu
+        tekrarı yayını tamamen durduracak kadar ciddi bir hata değil, tercih meselesidir."""
+        state = self.context.state
+        if state is None:
+            return approved
+
+        published = state.get_recent_articles(self.context.brand, limit=100)
+        if not published:
+            return approved
+
+        guard = NoveltyGuard(published)
+        fresh: list[Topic] = []
+        for candidate in approved:
+            result = guard.check(title=candidate.title, seed_keywords=candidate.seed_keywords)
+            if result.is_duplicate:
+                self.logger.info(f"novelty: {candidate.title!r} elendi — {result.reason}")
+            else:
+                fresh.append(candidate)
+
+        if not fresh:
+            self.logger.warning(
+                "novelty: tüm adaylar yayınlanmış konuların tekrarı — en yüksek skorlu "
+                "aday yine de kullanılıyor, konu havuzu genişletilmeli (seo.yaml)"
+            )
+            return approved
+        return fresh
+
+    def _pick_topic(self, candidates: list[Topic]) -> Topic:
+        """Aday listesi skora göre sıralıdır; eşit koşulda EN SON YAYINLANANDAN FARKLI bir
+        kategoriye öncelik verilir. Aksi halde blog tek bir gruba (ör. hep zeytinyağı)
+        kayıyor ve markanın diğer ürün ekseni (ahşap ürünler) hiç yazılmıyor."""
+        state = self.context.state
+        if state is not None:
+            recent = state.get_recent_articles(self.context.brand, limit=1)
+            if recent:
+                last_category = recent[0].category
+                rotated = [c for c in candidates if c.category != last_category]
+                if rotated:
+                    self.logger.info(
+                        f"kategori rotasyonu: son yayın {last_category!r} olduğu için "
+                        f"farklı gruptan aday seçiliyor"
+                    )
+                    return rotated[0]
+        return candidates[0]
 
     def _draft_cycle(
         self,
