@@ -21,6 +21,16 @@ class TopicScoutRequest(BaseModel):
 
 class TopicScoutAgent(BaseAgent[TopicScoutRequest, list[Topic]]):
     name = "topic_scout"
+    prompt_vars = frozenset(
+        {
+            "brand_overview",
+            "products",
+            "seed_keyword_clusters",
+            "used_keywords",
+            "published_titles",
+            "max_candidates",
+        }
+    )
 
     def run(self, input_data: TopicScoutRequest) -> list[Topic]:
         knowledge = self.require_knowledge()

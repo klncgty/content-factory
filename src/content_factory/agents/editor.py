@@ -39,6 +39,16 @@ from content_factory.utils.text import blog_url
 
 class EditorAgent(BaseAgent[EditorInput, QAReport]):
     name = "editor"
+    prompt_vars = frozenset(
+        {
+            "tone",
+            "writing_rules",
+            "content_scope",
+            "forbidden_words",
+            "forbidden_claims",
+            "article_body",
+        }
+    )
 
     def __init__(self, context: AgentContext, *, scope_guard: ScopeGuard | None = None) -> None:
         super().__init__(context)

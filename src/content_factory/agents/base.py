@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import ClassVar
 
 from content_factory.domain.exceptions import AgentConfigurationError, AgentValidationError
 from content_factory.knowledge.loader import BrandKnowledge
@@ -50,6 +51,13 @@ class BaseAgent[TIn, TOut](ABC):
     """
 
     name: str
+
+    # `render_user(**kwargs)`'a geçirilen anahtarların tam kümesi — `prompts/{name}/user.md`
+    # içindeki $değişkenlerle birebir eşleşmeli. Prompt kullanmayan agent'lar (ör. Linker,
+    # Publisher) bunu boş bırakır; tests/test_prompts.py bu sözleşmeyi tüm agent'lar için
+    # doğrular (bkz. ARCHITECTURE.md — prompt/kod uyuşmazlığı artık `Template.substitute`
+    # ile sessiz kalmıyor, KeyError fırlatıyor).
+    prompt_vars: ClassVar[frozenset[str]] = frozenset()
 
     def __init__(self, context: AgentContext) -> None:
         self.context = context

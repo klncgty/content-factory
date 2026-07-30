@@ -30,6 +30,10 @@ class ScopeCheckResult(BaseModel):
 
 
 class ScopeGuard:
+    # BaseAgent değil ama `prompts/scope_guard/user.md`'ye render_user ile aynı sözleşmeyle
+    # yazıyor — bkz. `BaseAgent.prompt_vars` ve tests/test_prompts.py.
+    prompt_vars = frozenset({"groups_description", "out_of_scope_examples", "article_excerpt"})
+
     def __init__(self, scope_config: ScopeConfig) -> None:
         self._scope = scope_config
 

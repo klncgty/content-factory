@@ -100,6 +100,17 @@ CREATE TABLE IF NOT EXISTS scope_rejections (
 );
 """
 
+# Bu sürüm, yukarıdaki _SCHEMA'nın karşılık geldiği şemayı temsil eder. Yeni bir
+# şema değişikliği gerektiğinde: (1) _SCHEMA'yı güncelle, (2) sürümü 1 artır,
+# (3) eski DB'leri yeni sürüme taşıyacak ALTER/UPDATE deyimlerini _MIGRATIONS'a
+# yeni anahtar olarak ekle. PRAGMA user_version sayesinde her migration bir kez
+# uygulanır; var olan veriler silinmez veya bozulmaz.
+_SCHEMA_VERSION = 1
+
+_MIGRATIONS: dict[int, list[str]] = {
+    # Örnek: 2: ["ALTER TABLE articles ADD COLUMN foo TEXT"],
+}
+
 
 class SQLiteStateStore(StateStore):
     def __init__(self, db_path: Path) -> None:
@@ -114,6 +125,28 @@ class SQLiteStateStore(StateStore):
     def init_schema(self) -> None:
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
+
+        current_version = self._conn.execute("PRAGMA user_version").fetchone()[0]
+
+        if current_version == 0:
+            # Ya taze bir DB (tablolar az önce _SCHEMA ile oluşturuldu) ya da bu
+            # migration mekanizmasından önce oluşmuş eski bir DB — her iki
+            # durumda da mevcut yapı zaten baseline şemayla eşleşiyor.
+            current_version = _SCHEMA_VERSION
+            self._conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
+            self._conn.commit()
+
+        if current_version > _SCHEMA_VERSION:
+            raise RuntimeError(
+                f"DB şema sürümü ({current_version}) koddan ({_SCHEMA_VERSION}) daha "
+                "yeni; uygulamayı güncelleyin."
+            )
+
+        for version in range(current_version + 1, _SCHEMA_VERSION + 1):
+            for statement in _MIGRATIONS.get(version, []):
+                self._conn.execute(statement)
+            self._conn.execute(f"PRAGMA user_version = {version}")
+            self._conn.commit()
 
     # -- articles ---------------------------------------------------------------------
     def record_article(self, article: Article) -> int:

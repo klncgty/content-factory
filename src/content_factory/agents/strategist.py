@@ -13,6 +13,21 @@ from content_factory.utils.json_llm import parse_llm_json
 
 class StrategistAgent(BaseAgent[StrategistInput, Brief]):
     name = "strategist"
+    prompt_vars = frozenset(
+        {
+            "topic_title",
+            "topic_category",
+            "seed_keywords",
+            "key_facts",
+            "suggested_angle",
+            "target_audience",
+            "writing_rules_summary",
+            "min_word_count",
+            "max_word_count",
+            "target_word_count",
+            "min_sections",
+        }
+    )
 
     def run(self, input_data: StrategistInput) -> Brief:
         knowledge = self.require_knowledge()

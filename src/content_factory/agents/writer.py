@@ -14,6 +14,24 @@ from content_factory.domain.models import Article, ArticleStatus, Brief, WriterI
 
 class WriterAgent(BaseAgent[WriterInput, Article]):
     name = "writer"
+    prompt_vars = frozenset(
+        {
+            "tone",
+            "writing_rules",
+            "forbidden_words",
+            "title",
+            "target_keyword",
+            "audience",
+            "target_word_count",
+            "min_word_count",
+            "max_word_count",
+            "words_per_section",
+            "outline",
+            "key_facts",
+            "feedback",
+            "previous_draft",
+        }
+    )
 
     def run(self, input_data: WriterInput) -> Article:
         knowledge = self.require_knowledge()

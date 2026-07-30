@@ -18,6 +18,7 @@ _BODY_EXCERPT_MAX_CHARS = 800
 
 class SEOOptimizerAgent(BaseAgent[Article, Article]):
     name = "seo_optimizer"
+    prompt_vars = frozenset({"title", "target_keyword", "secondary_keywords", "body_excerpt"})
 
     def run(self, input_data: Article) -> Article:
         if not input_data.target_keyword:

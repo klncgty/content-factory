@@ -19,6 +19,9 @@ _DEFAULT_KNOWLEDGE_FIELDS = ["olive_oil", "olive_tree", "kitchen_products"]
 
 class ResearchAgent(BaseAgent[Topic, ResearchNotes]):
     name = "research"
+    prompt_vars = frozenset(
+        {"topic_title", "topic_category", "seed_keywords", "reference_knowledge", "sources_policy"}
+    )
 
     def run(self, input_data: Topic) -> ResearchNotes:
         knowledge = self.require_knowledge()

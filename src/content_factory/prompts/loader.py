@@ -27,8 +27,9 @@ _FILES = ("system.md", "user.md", "examples.md")
 @dataclass(frozen=True)
 class PromptSet:
     """Bir agent'ın tüm prompt materyali. `user_template`, `render_user(**vars)` ile
-    doldurulur — eksik bir değişken hatayla patlamaz (`string.Template.safe_substitute`),
-    ilgili `$değişken` metinde olduğu gibi kalır (agent geliştirici hatasını fark eder)."""
+    doldurulur — eksik/fazla bir değişken `string.Template.substitute` ile KeyError
+    fırlatır (agent kodu ile `user.md` şablonu arasındaki sözleşme sessizce bozulmaz;
+    bkz. `BaseAgent.prompt_vars` ve tests/test_prompts.py)."""
 
     agent: str
     system: str
@@ -36,7 +37,7 @@ class PromptSet:
     examples: str
 
     def render_user(self, **variables: str) -> str:
-        return Template(self.user_template).safe_substitute(**variables)
+        return Template(self.user_template).substitute(**variables)
 
 
 class PromptLoader:

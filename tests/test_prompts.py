@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
 
+from content_factory.agents.editor import EditorAgent
+from content_factory.agents.research import ResearchAgent
+from content_factory.agents.seo_optimizer import SEOOptimizerAgent
+from content_factory.agents.strategist import StrategistAgent
+from content_factory.agents.topic_scout import TopicScoutAgent
+from content_factory.agents.writer import WriterAgent
+from content_factory.guards.scope_guard import ScopeGuard
 from content_factory.prompts.loader import PromptLoader
 
 EXPECTED_AGENTS = {
@@ -15,6 +23,24 @@ EXPECTED_AGENTS = {
     "editor",
     "scope_guard",
 }
+
+# `prompt_vars` taşıyan sınıf, agent adına göre — ScopeGuard bir BaseAgent değil (agent
+# değil, saf yardımcı) ama aynı prompt_vars sözleşmesine uyuyor (bkz. guards/scope_guard.py).
+_PROMPT_VARS_OWNERS: dict[str, type] = {
+    "topic_scout": TopicScoutAgent,
+    "research": ResearchAgent,
+    "strategist": StrategistAgent,
+    "writer": WriterAgent,
+    "seo_optimizer": SEOOptimizerAgent,
+    "editor": EditorAgent,
+    "scope_guard": ScopeGuard,
+}
+
+_TEMPLATE_VAR_RE = re.compile(r"\$([a-zA-Z_][a-zA-Z0-9_]*)")
+
+
+def _template_vars(text: str) -> set[str]:
+    return set(_TEMPLATE_VAR_RE.findall(text))
 
 
 @pytest.fixture
@@ -78,7 +104,22 @@ def test_render_user_substitutes_variables(loader: PromptLoader) -> None:
     assert "$title" not in rendered
 
 
-def test_render_user_leaves_missing_variables_untouched(loader: PromptLoader) -> None:
+def test_render_user_raises_on_missing_variable(loader: PromptLoader) -> None:
     prompt_set = loader.load("seo_optimizer")
-    rendered = prompt_set.render_user(title="X")
-    assert "$target_keyword" in rendered  # safe_substitute -> patlamaz, olduğu gibi kalır
+    with pytest.raises(KeyError):
+        prompt_set.render_user(title="X")  # substitute -> eksik değişkende sessiz kalmaz
+
+
+@pytest.mark.parametrize("agent_name", sorted(_PROMPT_VARS_OWNERS))
+def test_prompt_vars_match_user_template(loader: PromptLoader, agent_name: str) -> None:
+    """Agent'ın `render_user`'a gönderdiği anahtarlar (`prompt_vars`) ile `user.md`
+    içindeki $değişkenler birebir eşleşmeli — biri diğerinden fazla/eksik olursa
+    `Template.substitute` ya KeyError fırlatır ya da agent'ın gönderdiği bir değer
+    şablonda hiç kullanılmaz (sessiz bir sözleşme kayması)."""
+    owner = _PROMPT_VARS_OWNERS[agent_name]
+    prompt_set = loader.load(agent_name)
+    template_vars = _template_vars(prompt_set.user_template)
+    assert owner.prompt_vars == template_vars, (
+        f"{agent_name}: prompt_vars={sorted(owner.prompt_vars)} != "
+        f"user.md değişkenleri={sorted(template_vars)}"
+    )
