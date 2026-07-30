@@ -32,7 +32,7 @@ Marka-bağımsız, çoklu markaya genişleyebilecek otonom AI blog/SEO içerik �
 
 ## Durum
 
-**Faz 1 çekirdek pipeline'ı uçtan uca çalışıyor** (239 test). 10 agent'ın hepsi gerçek iş
+**Faz 1 çekirdek pipeline'ı uçtan uca çalışıyor** (343 test). 10 agent'ın hepsi gerçek iş
 mantığıyla implemente edildi:
 
 | Adım | Agent | Not |
@@ -55,18 +55,17 @@ ile kapanır ve hiçbir şey yayınlanmaz. Yayın kayıtları (`articles`, `keyw
 
 **Durum:** pipeline uçtan uca kablolanmış durumda. Knowledge Base'in 16 dosyası gerçek
 içerikle dolduruldu (`KnowledgeLoader.validate("oleart")` artık placeholder raporlamıyor)
-ve görsel üretimi kablolandı: varsayılan sağlayıcı **Google AI Studio (Gemini API)**,
-alternatif olarak OpenRouter — ikisi de `integrations/image_client.py`'de, geçiş tek bir
-config alanıyla (`agents.image_generator.provider`). Görsel üretimi başarısız olursa
+ve görsel üretimi kablolandı: varsayılan sağlayıcı **Replicate** (`config/models.yaml -> agents.image_generator.provider: replicate`),
+alternatif olarak Google AI Studio ve OpenRouter. Sağlayıcı geçişi tek bir config
+alanıyla (`agents.image_generator.provider`) yapılır. Görsel üretimi başarısız olursa
 makale görselsiz yayınlanır, pipeline durmaz. oleart.co tarafındaki yayın sözleşmesi
 bağımlılığı da tamamlandı (`scripts/build-blog.mjs`).
 
-> **Dikkat — görsel kotası:** Gemini API'de görsel modelleri (`gemini-2.5-flash-image` ve
+> **Dikkat — görsel kotası:** Google AI Studio'da görsel modelleri (`gemini-2.5-flash-image` ve
 > tüm `*-image` türevleri) mevcut anahtarda `limit: 0` ile `429 RESOURCE_EXHAUSTED`
 > dönüyor; ücretsiz kota metin modellerinde çalışıyor ama **görselde açık değil**. Bu
 > çözülene kadar makaleler görselsiz yayınlanır. Alternatif: projede faturalandırmayı
-> etkinleştirmek veya `provider: openrouter`'a dönmek (orada görsel üretimi ücretli ama
-> çalışıyor).
+> etkinleştirmek, `provider: replicate` kullanmak veya `provider: openrouter`'a dönmek.
 
 **Kalan işler:** görsel kotasının açılması, `pr-then-automerge` stratejisinin gerçek bir
 PR üzerinde doğrulanması, `brand.yaml` yasaklı ifade listesinin hukuki gözden geçirmesi
@@ -77,7 +76,7 @@ ve ilk 5-10 makalenin kalite/maliyet doğrulaması — bkz. `ROADMAP.md`.
 ```bash
 brew install uv                 # yoksa
 uv sync --extra dev
-cp .env.example .env            # OPENROUTER_API_KEY, IMAGE_API_KEY, GIT_TOKEN doldur (Faz 1)
+cp .env.example .env            # OPENROUTER_API_KEY, REPLICATE_API_KEY/REPLICATE_API_TOKEN, GIT_TOKEN doldur (Faz 1)
 
 uv run pytest                   # testler
 uv run ruff check src tests     # lint
