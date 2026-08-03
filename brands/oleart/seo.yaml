@@ -1,13 +1,40 @@
 # SEO strateji konfigürasyonu — TopicScoutAgent ve SEOOptimizerAgent tarafından okunur.
 # Not: konu kümeleri scope.yaml'daki grup/anahtar kelimelerle tutarlı olmalı.
 
+# Ağırlık bilinçli olarak TARİFLERDE: blogun ilk iki makalesi ("...Yemek Pişirmenin
+# Faydaları", "...Yemeklerde Nasıl Kullanılır") aynı soyut ekseni tekrar etti. Somut bir
+# yemek adı taşıyan konular hem birbirinden doğal olarak ayrışır hem de gerçek arama
+# niyetine karşılık gelir. Soyut/genel eksenler (faydaları, teknikleri, avantajları)
+# bu havuzdan kasıtlı olarak ÇIKARILDI — o konular zaten yazıldı.
+#
+# Not: ScopeGuard sert bir allowlist ve birebir alt dize araması yapıyor; bu yüzden tarif
+# başlıkları "Zeytinyağlı ..." ile başlamalı ("İmambayıldı Nasıl Yapılır" kapsam dışı
+# kalıyor, "Zeytinyağlı İmambayıldı Tarifi" kapsamda).
 keyword_clusters:
   - group: olive_and_oil
-    seed_keywords: ["soğuk sıkım zeytinyağı", "erken hasat zeytinyağı", "naturel sızma zeytinyağı nedir"]
+    seed_keywords:
+      - "zeytinyağlı enginar tarifi"
+      - "zeytinyağlı taze fasulye tarifi"
+      - "zeytinyağlı barbunya pilaki tarifi"
   - group: olive_and_oil
-    seed_keywords: ["zeytinyağı nasıl saklanır", "zeytinyağı hangi yemeklerde kullanılır"]
+    seed_keywords:
+      - "zeytinyağlı yaprak sarma tarifi"
+      - "zeytinyağlı imambayıldı tarifi"
+      - "zeytinyağlı biber dolması tarifi"
+  - group: olive_and_oil
+    seed_keywords:
+      - "zeytinyağlı pırasa tarifi"
+      - "zeytinyağlı kereviz tarifi"
+      - "zeytinyağlı bakla tarifi"
+  - group: olive_and_oil
+    seed_keywords:
+      - "zeytinyağlı semizotu salatası"
+      - "zeytinyağlı fava tarifi"
+      - "zeytinyağlı kabak mücveri tarifi"
+  - group: olive_and_oil
+    seed_keywords: ["zeytinyağı nasıl saklanır", "zeytinyağı şişesi nasıl seçilir"]
   - group: wooden_products
-    seed_keywords: ["zeytin ağacı kesme tahtası bakımı", "zeytin ağacı mutfak gereçleri avantajları"]
+    seed_keywords: ["zeytin ağacı kesme tahtası bakımı", "zeytin ağacı kaşık temizliği"]
 
 competitor_domains: []   # Faz 1'de doldurulacak
 

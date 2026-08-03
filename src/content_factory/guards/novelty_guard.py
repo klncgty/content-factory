@@ -36,7 +36,18 @@ from content_factory.domain.models import Article
 
 _PREFIX_LEN = 5
 _MIN_SHARED = 2
-_DEFAULT_THRESHOLD = 0.7
+_DEFAULT_THRESHOLD = 0.5
+"""0.7'den 0.5'e indirildi (04.08.2026). Gerçek vakalarla ölçüldü: yayınlanmış
+"Erken Hasat Zeytinyağı ile Yemek Pişirmenin Faydaları" makalesine karşı
+"Soğuk Sıkım Zeytinyağı ile Yemek Pişirme Teknikleri" 0.50, "Zeytinyağı Duman Noktası
+ve Yemek Pişirme Güvenliği" 0.50, "Erken Hasat Zeytinyağı ve Antioksidan Özellikleri"
+0.60 kapsama alıyordu — hepsi 0.70'in altında kaldığı için süzgeçten geçip backlog'a
+yazılmıştı. Konuyu değiştirmeden başa sıfat eklemek (soğuk sıkım/erken hasat) kapsamayı
+düşürüyor; eşik bu yüzden ortak çekirdeğin yarısına çekildi.
+
+Eşiği düşürmenin gerçek tarifleri birbirine benzetme riski `_FORMAT_WORDS` ile
+karşılanır: ölçümde farklı yemekler (taze fasulye, barbunya pilaki, kabak mücveri)
+yanlış pozitif vermiyor."""
 
 # Konu taşımayan, neredeyse her başlıkta geçen sözcükler. Bunlar sayılırsa "X Nedir" ile
 # "Y Nedir" yapay olarak benzer görünür.
@@ -66,6 +77,30 @@ _STOPWORDS = frozenset(
         "rehberi",
         "önemli",
         "önemlidir",
+    }
+)
+
+_FORMAT_WORDS = frozenset(
+    {
+        # Makalenin BİÇİMİNİ söyleyen, konusunu söylemeyen sözcükler. Bunlar konu taşıyan
+        # sözcük sayılırsa iki farklı yemek tarifi ("Zeytinyağlı Enginar Tarifi" /
+        # "Zeytinyağlı Taze Fasulye Tarifi") ortak "tarif" kökü yüzünden birbirinin
+        # tekrarı görünür; oysa tarifleri ayıran şey YEMEĞİN ADIDIR. Tersi de doğru:
+        # bunlar elendiğinde "Zeytinyağlı Enginar Tarifi" ile "Zeytinyağlı Enginar Nasıl
+        # Yapılır" geriye aynı çekirdeği (zeytinyağlı + enginar) bıraktığı için gerçek
+        # tekrar olarak yakalanır.
+        "tarif",
+        "tarifi",
+        "tarifler",
+        "tarifleri",
+        "yapılır",
+        "yapılışı",
+        "yapımı",
+        "püf",
+        "ipuçları",
+        "önerileri",
+        "adım",
+        "adımda",
     }
 )
 
@@ -126,7 +161,7 @@ def _stems(*texts: str) -> frozenset[str]:
             continue
         normalized = unicodedata.normalize("NFC", text).lower()
         for word in _WORD_SPLIT.split(normalized):
-            if len(word) < 3 or word in _STOPWORDS:
+            if len(word) < 3 or word in _STOPWORDS or word in _FORMAT_WORDS:
                 continue
             stems.add(word[:_PREFIX_LEN])
     return frozenset(stems)

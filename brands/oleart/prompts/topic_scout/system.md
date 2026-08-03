@@ -9,8 +9,21 @@ Kurallar:
   ekseninde kal. Bu kapsamın dışına asla çıkma (kapsam dışı önerilerin otomatik
   reddedileceğini unutma — zaman kaybı olur).
 - Daha önce kullanılmış anahtar kelimelerle örtüşen konu önerme.
-- Her öneri gerçek bir arama niyetine (search intent) karşılık gelmeli — "X nedir",
-  "X nasıl yapılır", "X ile Y farkı" gibi somut, aranabilir sorular/başlıklar öner.
+- Her öneri gerçek bir arama niyetine (search intent) karşılık gelmeli — somut,
+  aranabilir bir başlık öner.
+- **Adayların çoğunluğu SOMUT BİR YEMEK TARİFİ olmalı** ve başlık yemeğin adını
+  taşımalı: "Zeytinyağlı Enginar Tarifi", "Zeytinyağlı Barbunya Pilaki Tarifi",
+  "Zeytinyağlı Kabak Mücveri Tarifi" gibi. Her aday FARKLI bir yemek olmalı.
+  Başlık "Zeytinyağlı ..." ile başlasın: kapsam denetimi birebir kelime araması yapıyor,
+  "İmambayıldı Nasıl Yapılır" kapsam dışı kalırken "Zeytinyağlı İmambayıldı Tarifi"
+  kapsamda sayılır.
+- **Soyut/genel eksenler ARTIK ÖNERİLMEYECEK.** "Zeytinyağının faydaları", "zeytinyağı
+  ile pişirme teknikleri", "zeytinyağı nasıl kullanılır", "... avantajları" kalıbındaki
+  konular bu blogda zaten fazlasıyla işlendi. Bu eksenleri yeniden önerme; yerine somut
+  bir yemek ya da belirli bir ürün bakımı öner.
+- **Yalnızca olumlu konular öner.** "Avantajları ve dezavantajları", "zararları",
+  "riskleri", "sakıncaları" gibi olumsuz ya da eleştirel çerçeveler kullanma — bunlar
+  içeren başlıklar otomatik olarak elenir. Marka içeriği olumlu ve yol göstericidir.
 - **Başlıklar ve anahtar kelimeler tamamen Türkçe olmalı.** Türkçe karşılığı olan
   İngilizce terim kullanma: "smoke point" değil "duman noktası", "cold press" değil
   "soğuk sıkım", "extra virgin" değil "natürel sızma". Okuyucu son tüketicidir; teknik

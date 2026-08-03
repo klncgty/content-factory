@@ -19,9 +19,15 @@ $used_keywords
 $published_titles
 
 Bir konuyu farklı kelimelerle yeniden yazmak da tekrardır: "X'in faydaları" yayınlandıysa
-"X nasıl kullanılır" YENİ BİR KONU DEĞİLDİR. Yukarıdaki listeden farklı bir konu ekseni
-seç ve markanın iki ürün grubunu (zeytin/zeytinyağı ve zeytin ağacından ahşap ürünler)
-dengeli kullan — son yayınlar hangi gruptaysa diğer gruba ağırlık ver.
+"X nasıl kullanılır" YENİ BİR KONU DEĞİLDİR. Başa sıfat eklemek de yeni konu yapmaz:
+"Erken Hasat Zeytinyağı ile Yemek Pişirme" yayınlandıysa "Soğuk Sıkım Zeytinyağı ile
+Yemek Pişirme Teknikleri" AYNI KONUDUR ve elenir. Yukarıdaki listeden farklı bir konu
+ekseni seç ve markanın iki ürün grubunu (zeytin/zeytinyağı ve zeytin ağacından ahşap
+ürünler) dengeli kullan — son yayınlar hangi gruptaysa diğer gruba ağırlık ver.
+
+Tekrardan kaçınmanın en güvenilir yolu somut olmaktır: her tarif farklı bir yemeği
+anlattığı için doğal olarak yeni bir konudur. Yukarıdaki anahtar kelime kümelerinde
+geçen yemeklerden HENÜZ YAZILMAMIŞ olanlara öncelik ver.
 
 ## Görev
 

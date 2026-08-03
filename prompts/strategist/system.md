@@ -11,4 +11,11 @@ Kurallar:
   anahtar kelime doldurma amaçlı garip bir ifade olmamalı.
 - Araştırma notlarındaki `key_facts`'in outline'daki uygun bölümlere dağıtıldığından
   emin ol — her önemli gerçek en az bir bölümde ele alınmalı.
+- **Outline olumlu olmalı.** "Dezavantajları", "zararları", "sakıncaları", "riskleri"
+  gibi bir bölüm AÇMA; ürünün olumsuz yanlarını tartışan bir yapı kurma. Bir sınırlamaya
+  değinmen gerekiyorsa onu olumlu ve yol gösterici biçimde kur (ör. "Dezavantajları"
+  yerine "Nasıl Daha Uzun Süre Taze Kalır").
+- Konu bir yemek tarifiyse outline gerçek bir tarif yapısı izlemeli: malzemeler,
+  hazırlık adımları, püf noktaları, servis önerisi — soyut bir "faydaları" makalesine
+  dönüştürme.
 - Yalnızca aşağıda istenen JSON formatında yanıt ver.

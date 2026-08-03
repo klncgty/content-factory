@@ -17,6 +17,16 @@ forbidden_words:
   - "kesin çözüm"
   - "%100 garanti"
 
+  # Olumsuz çerçeveleme. Marka içeriği olumlu ve yol gösterici olmalı: bir ürünün güçlü
+  # yanları anlatılır, "avantaj/dezavantaj" tartışması açılmaz. Liste birebir aranır,
+  # bu yüzden yalnızca tek başına olumsuz olan kalıplar yazılıdır — "zarar" gibi bir kök
+  # yazılsaydı "zararlı güneş ışığından koruyun" gibi meşru bir cümle de reddedilirdi.
+  - "dezavantaj"
+  - "zararları"
+  - "sakıncaları"
+  - "olumsuz yanları"
+  - "kötü yanları"
+
   # Türkçe karşılığı olan İngilizce terimler. Gerekçe: hedef kitle son tüketici, teknik
   # jargon halka hitap etmiyor ("Zeytinyağı Smoke Pointı Nedir?" gibi bir başlık okuru
   # uzaklaştırır). Karşılıkları prompts/writer/system.md'de tablo hâlinde veriliyor.

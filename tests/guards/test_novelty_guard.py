@@ -70,3 +70,36 @@ def test_no_published_articles_means_everything_is_new() -> None:
     result = NoveltyGuard([]).check(title="Erken Hasat Zeytinyağı Nedir")
 
     assert not result.is_duplicate
+
+
+def test_rejects_same_axis_with_different_adjective(guard: NoveltyGuard) -> None:
+    """Gerçek vaka (03.08.2026): backlog bu üç konuyla dolmuştu. Başa sıfat eklemek
+    ("soğuk sıkım" / "duman noktası") konuyu değiştirmez; eski 0.7 eşiği bunların
+    hepsini kaçırıyordu (ölçülen kapsama 0.50-0.60)."""
+    for title in (
+        "Soğuk Sıkım Zeytinyağı ile Yemek Pişirme Teknikleri",
+        "Zeytinyağı Duman Noktası ve Yemek Pişirme Güvenliği",
+    ):
+        assert guard.check(title=title).is_duplicate, title
+
+
+def test_different_dishes_are_not_duplicates() -> None:
+    """Tarifler birbirini engellememeli: onları ayıran şey yemeğin adıdır, ortak
+    'zeytinyağlı'/'tarifi' sözcükleri değil. Bu bozulursa ilk tariften sonra hiçbir
+    tarif yayınlanamaz."""
+    guard = NoveltyGuard([_article("zeytinyagli-enginar", "Zeytinyağlı Enginar Tarifi")])
+
+    for title in (
+        "Zeytinyağlı Taze Fasulye Tarifi",
+        "Zeytinyağlı Barbunya Pilaki Tarifi",
+        "Zeytinyağlı Kabak Mücveri Tarifi",
+    ):
+        assert not guard.check(title=title).is_duplicate, title
+
+
+def test_same_dish_in_another_format_is_duplicate() -> None:
+    """Aynı yemek, farklı kalıp ("Tarifi" / "Nasıl Yapılır") tekrardır — biçim sözcükleri
+    elendiği için geriye aynı çekirdek kalır."""
+    guard = NoveltyGuard([_article("zeytinyagli-enginar", "Zeytinyağlı Enginar Tarifi")])
+
+    assert guard.check(title="Zeytinyağlı Enginar Nasıl Yapılır").is_duplicate

@@ -468,3 +468,31 @@ def test_stale_backlog_topic_is_skipped_and_marked(orchestrate, agent_context) -
     assert fakes["topic_scout"].calls != []
     assert state.topic.title == "Sele Zeytini Nedir?"
     assert agent_context.state.get_pending_topics("oleart") == []
+
+
+def test_candidate_with_forbidden_word_in_title_is_dropped(orchestrate) -> None:
+    """Başlıktaki yasaklı ifade Writer'ın düzeltebileceği bir şey değildir (başlık
+    brief'ten gelir ve her denemede aynı kalır), bu yüzden aday daha üretim başlamadan
+    elenir. Gerçek vaka: 'Zeytin Ağacı Mutfak Gereçlerinin Avantajları ve Dezavantajları'."""
+    state, _ = orchestrate(
+        topics=[
+            _topic("Zeytin Ağacı Mutfak Gereçlerinin Avantajları ve Dezavantajları"),
+            _topic("Zeytinyağlı Enginar Tarifi", seed_keywords=["zeytinyağı"]),
+        ]
+    )
+
+    assert state.topic.title == "Zeytinyağlı Enginar Tarifi"
+
+
+def test_backlog_topic_with_forbidden_word_is_marked_stale(orchestrate, agent_context) -> None:
+    agent_context.state.add_topic_candidates(
+        [_topic("Zeytinyağının Dezavantajları", seed_keywords=["zeytinyağı"], score=0.9)]
+    )
+
+    state, fakes = orchestrate(
+        topics=[_topic("Zeytinyağlı Pırasa Tarifi", seed_keywords=["zeytinyağı"])]
+    )
+
+    assert state.topic.title == "Zeytinyağlı Pırasa Tarifi"
+    assert fakes["topic_scout"].calls != []  # bayat backlog atlandı, TopicScout çalıştı
+    assert agent_context.state.get_pending_topics("oleart") == []

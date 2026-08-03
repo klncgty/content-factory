@@ -239,9 +239,26 @@ class PipelineOrchestrator:
         )
         return selected
 
+    def _forbidden_title_reason(self, topic: Topic) -> str | None:
+        """Başlıkta `brand.yaml: forbidden_words` listesinden bir ifade geçiyor mu?
+
+        Editor bu listeyi zaten deterministik olarak denetliyor, ama başlıktaki bir ihlal
+        (ör. "... Avantajları ve Dezavantajları") Writer'ın düzeltebileceği bir şey
+        değildir: başlık brief'ten gelir, her denemede aynı kalır ve run kaçınılmaz olarak
+        `needs_review`e düşer. Bu yüzden ihlal daha üretim başlamadan, konu seçiminde
+        elenir — böylece hiçbir LLM çağrısı boşa gitmez."""
+        haystack = topic.title.lower()
+        for word in self.context.settings.brand.forbidden_words:
+            if word.lower() in haystack:
+                return f"başlıkta yasaklı ifade: {word!r}"
+        return None
+
     def _backlog_reject_reason(self, topic: Topic) -> str | None:
         """Bekleyen bir konunun artık kullanılamamasının gerekçesi, kullanılabilirse `None`.
-        Her iki kontrol de deterministiktir ve LLM çağırmaz."""
+        Kontrollerin hepsi deterministiktir ve LLM çağırmaz."""
+        forbidden = self._forbidden_title_reason(topic)
+        if forbidden is not None:
+            return forbidden
         if self.scope_guard is not None:
             result = self.scope_guard.pre_check(
                 title=topic.title, seed_keywords=topic.seed_keywords
@@ -267,11 +284,21 @@ class PipelineOrchestrator:
             f"{[candidate.title for candidate in candidates]}"
         )
 
+        # Başlığında yasaklı ifade geçen adaylar kapsam kontrolünden ÖNCE elenir: bunlar
+        # zaten hiçbir denemede yayınlanamaz (bkz. `_forbidden_title_reason`).
+        allowed: list[Topic] = []
+        for candidate in candidates:
+            reason = self._forbidden_title_reason(candidate)
+            if reason is None:
+                allowed.append(candidate)
+            else:
+                self.logger.info(f"aday elendi ({reason}): {candidate.title!r}")
+
         if self.scope_guard is None:
-            approved = candidates
+            approved = allowed
         else:
             approved = []
-            for candidate in candidates:
+            for candidate in allowed:
                 result = self.scope_guard.pre_check(
                     title=candidate.title, seed_keywords=candidate.seed_keywords
                 )
