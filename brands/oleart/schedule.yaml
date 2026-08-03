@@ -3,7 +3,7 @@
 # NOT: Bu dosya henüz hiçbir kod tarafından OKUNMUYOR (Faz 2 scheduler'ı için duruyor).
 # Yayın ritmini bugün belirleyen yer `.github/workflows/publish.yml` içindeki cron'dur;
 # ikisi tutarlı tutulmalı.
-cron: "0 20 3,6,9,12,15,18,21,24,27,30 * *"   # 3 günde bir 23:00 Europe/Istanbul (= 20:00 UTC)
+cron: "59 20 3,6,9,12,15,18,21,24,27,30 * *"   # 3 günde bir 23:59 Europe/Istanbul (= 20:59 UTC)
 timezone: "Europe/Istanbul"
 
 max_publishes_per_run: 1
