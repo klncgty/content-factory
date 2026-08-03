@@ -1,19 +1,19 @@
 name: Yayınla (3 günde bir)
 
-# Zamanlama: 3 günde bir, 15:43 Europe/Istanbul. GitHub cron'u UTC çalıştığı için 12:43 UTC
+# Zamanlama: 3 günde bir, 23:00 Europe/Istanbul. GitHub cron'u UTC çalıştığı için 20:00 UTC
 # yazılır. Türkiye 2016'dan beri kalıcı UTC+3 kullanıyor (yaz saati uygulaması yok), yani
 # bu dönüşüm yıl boyu sabittir — kayma olmaz.
 #
 # Günler `*/3` ile değil AÇIK LİSTE ile yazılıyor: `*/3` ayın 1, 4, 7, ... 28, 31'ine denk
-# gelir ve ilk yayın günü olan 30 Temmuz 2026 bu kümeye girmiyordu. 3, 6, ... 30 listesi
-# aynı 3 günlük ritmi verir ama fazı bir gün kaydırır. Ay sonunda tur 3-4 güne çıkar
+# gelir; buradaki 3, 6, ... 30 listesi aynı 3 günlük ritmi verir ama fazı, ritmin
+# başlangıcı olan 3 Ağustos 2026'ya oturtur. Ay sonunda tur 3-4 güne çıkar
 # (ör. 30 -> sonraki ayın 3'ü); gerçek "her 72 saat" garantisi cron ile mümkün değil.
 #
 # Not: GitHub zamanlanmış run'ları yoğun saatlerde kuyruğa alır, tetikleme birkaç dakika
 # (bazen ~15 dk) gecikebilir. Saat garantisi değil, ritim garantisidir.
 on:
   schedule:
-    - cron: "43 12 3,6,9,12,15,18,21,24,27,30 * *"
+    - cron: "0 20 3,6,9,12,15,18,21,24,27,30 * *"
   workflow_dispatch: # Actions sekmesinden elle de tetiklenebilir (ilk deneme için)
 
 # Aynı anda iki run çalışmasın: ikisi de aynı hedef repoya push eder ve aynı state
