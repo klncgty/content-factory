@@ -106,6 +106,61 @@ def test_word_count_bounds_included_in_prompt(agent_context: AgentContext) -> No
     assert str(bounds.max_word_count) in prompt
 
 
+def _long_markdown(word_count: int) -> str:
+    """`word_count` kelimelik sahte bir taslak — genişletme tabanı testleri için."""
+    return "# Başlık\n\n" + " ".join(["kelime"] * (word_count - 2))
+
+
+def test_short_draft_triggers_expansion_with_previous_draft(
+    agent_context: AgentContext,
+) -> None:
+    """İlk taslak tabanın (min_word_count + 100) altındaysa Writer, Editor'ü beklemeden
+    kendi genişletme turunu döndürür ve bu turda taslağı SIFIRDAN yazdırmak yerine
+    `previous_draft` olarak verir."""
+    long_draft = _long_markdown(950)
+    stub = StubLLMProvider(responses=[_SAMPLE_MARKDOWN, long_draft])
+    agent_context.llm = stub
+    agent = WriterAgent(agent_context)
+
+    article = agent(_writer_input())
+
+    assert article.body_markdown == long_draft
+    assert article.word_count == len(long_draft.split())
+    assert len(stub.requests) == 2
+    expansion_prompt = stub.requests[1].messages[0].content
+    assert _SAMPLE_MARKDOWN in expansion_prompt  # önceki taslak revizyon için verildi
+    assert "çok kısa" in expansion_prompt  # eksik uzunluk somut geri bildirim olarak verildi
+
+
+def test_expansion_never_replaces_draft_with_shorter_output(
+    agent_context: AgentContext,
+) -> None:
+    """Genişletme turu daha kısa/boş bir yanıt döndürürse eldeki en uzun taslak korunur —
+    kötü bir genişletme iyi bir taslağı ezmemeli. Tur sayısı da sınırlıdır (sonsuz döngü yok)."""
+    stub = StubLLMProvider(responses=[_SAMPLE_MARKDOWN, "", "# Kısa\n\nTek cümle."])
+    agent_context.llm = stub
+    agent = WriterAgent(agent_context)
+
+    article = agent(_writer_input())
+
+    assert article.body_markdown == _SAMPLE_MARKDOWN
+    # ilk üretim + en fazla _MAX_EXPANSION_PASSES genişletme çağrısı
+    assert len(stub.requests) == 1 + WriterAgent._MAX_EXPANSION_PASSES
+
+
+def test_no_expansion_when_draft_meets_floor(agent_context: AgentContext) -> None:
+    bounds = agent_context.settings.brand.content_bounds
+    long_draft = _long_markdown(bounds.min_word_count + 150)
+    stub = StubLLMProvider(responses=[long_draft])
+    agent_context.llm = stub
+    agent = WriterAgent(agent_context)
+
+    article = agent(_writer_input())
+
+    assert article.body_markdown == long_draft
+    assert len(stub.requests) == 1
+
+
 def test_forbidden_words_included_in_prompt(agent_context: AgentContext) -> None:
     stub = StubLLMProvider(responses=[_SAMPLE_MARKDOWN])
     agent_context.llm = stub

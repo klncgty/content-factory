@@ -3,13 +3,20 @@
 Diğer LLM kullanan agent'lardan farklı olarak yanıtı JSON değil, düz markdown'dır
 (bkz. `prompts/writer/system.md`) — makale gövdesi için JSON'a sarıp açmanın hiçbir
 faydası yok, gereksiz bir ayrıştırma adımı ve hata riski eklerdi.
+
+Uzunluk garantisi: modeller prompt'taki hedefe güvenilir uymuyor (hedef 1000 iken
+ölçülen 635-741 kelime). Bu yüzden Writer, Editor'ün alt sınırını prompt'a yazmakla
+yetinmez; taslağı üretir üretmez kelime sayısını KENDİSİ ölçer ve tabanın altındaysa
+aynı taslağı genişletme turlarıyla uzatır (bkz. `_expand_to_floor`). Böylece kısa
+taslaklar Editor'e hiç ulaşmaz ve pahalı Writer->SEO->Linker->Editor retry döngüsü
+uzunluk yüzünden dönmez.
 """
 
 from __future__ import annotations
 
 from content_factory.agents.base import BaseAgent
 from content_factory.domain.exceptions import AgentOutputParsingError
-from content_factory.domain.models import Article, ArticleStatus, Brief, WriterInput
+from content_factory.domain.models import Article, ArticleStatus, Brief, ResearchNotes, WriterInput
 
 
 class WriterAgent(BaseAgent[WriterInput, Article]):
@@ -33,10 +40,56 @@ class WriterAgent(BaseAgent[WriterInput, Article]):
         }
     )
 
+    _FLOOR_MARGIN = 100
+    """Writer'ın kendi tabanı, Editor'ün alt sınırının bu kadar ÜSTÜNDEDİR
+    (800 -> 900). Alt sınırın tam üstünü hedeflemek yeterli değil: SEO/Linker
+    adımları metni değiştirmez ama modelin kelime sayımı bizimkiyle birebir örtüşmez;
+    pay bırakılmazsa taslak sınırın birkaç kelime altında kalıp yine reddedilir."""
+
+    _MAX_EXPANSION_PASSES = 2
+    """Taban tutturulamadığında yapılacak en fazla genişletme turu. Her tur ucuz bir
+    ek LLM çağrısıdır; iki turda tabana ulaşamayan bir taslak zaten Editor retry
+    döngüsüne düşer, burada sonsuz döngüye girmenin anlamı yok."""
+
     def run(self, input_data: WriterInput) -> Article:
-        knowledge = self.require_knowledge()
         brief = input_data.brief
-        research = input_data.research
+
+        body_markdown = self._generate(
+            brief,
+            input_data.research,
+            feedback=input_data.feedback,
+            previous_draft=input_data.previous_draft,
+        )
+        if not body_markdown:
+            raise AgentOutputParsingError(f"{self.name}: LLM boş bir taslak döndürdü")
+
+        body_markdown = self._expand_to_floor(brief, input_data.research, body_markdown)
+
+        tags = self._build_tags(brief)
+        return Article(
+            brand=self.context.brand,
+            title=brief.title,
+            category=brief.topic.category,
+            target_keyword=brief.target_keyword,
+            secondary_keywords=brief.secondary_keywords,
+            body_markdown=body_markdown,
+            status=ArticleStatus.DRAFT,
+            tags=tags,
+            word_count=len(body_markdown.split()),
+        )
+
+    def _generate(
+        self,
+        brief: Brief,
+        research: ResearchNotes,
+        *,
+        feedback: str | None,
+        previous_draft: str | None,
+    ) -> str:
+        """Tek bir Writer LLM çağrısı. Hem ilk taslak hem genişletme turları bu yolu
+        kullanır — genişletme, "önceki taslağı şu geri bildirimle revize et" işinin
+        özel bir hâlidir, ayrı bir prompt gerektirmez."""
+        knowledge = self.require_knowledge()
         # Editor kelime sayısını deterministik olarak denetliyor (editor.py::_check_word_count);
         # aynı sınırları yazma anında da vererek gereksiz reddet-yeniden yaz döngüsünü azaltıyoruz.
         bounds = self.context.settings.brand.content_bounds
@@ -54,29 +107,61 @@ class WriterAgent(BaseAgent[WriterInput, Article]):
             words_per_section=str(self._words_per_section(brief, bounds.min_word_count)),
             outline=self._format_outline(brief),
             key_facts="\n".join(f"- {fact}" for fact in research.key_facts) or "(yok)",
-            feedback=input_data.feedback or "(yok — ilk deneme)",
-            previous_draft=input_data.previous_draft
-            or "(yok — ilk deneme, sıfırdan yaz)",
+            feedback=feedback or "(yok — ilk deneme)",
+            previous_draft=previous_draft or "(yok — ilk deneme, sıfırdan yaz)",
         )
-        body_markdown = self.call_llm(
+        return self.call_llm(
             system_prompt=self.load_prompts().system, user_message=user_message
         ).strip()
 
-        if not body_markdown:
-            raise AgentOutputParsingError(f"{self.name}: LLM boş bir taslak döndürdü")
+    def _expand_to_floor(self, brief: Brief, research: ResearchNotes, body_markdown: str) -> str:
+        """Taslak tabanın altındaysa, SIFIRDAN YAZDIRMADAN genişletme turları uygular.
 
-        tags = self._build_tags(brief)
-        return Article(
-            brand=self.context.brand,
-            title=brief.title,
-            category=brief.topic.category,
-            target_keyword=brief.target_keyword,
-            secondary_keywords=brief.secondary_keywords,
-            body_markdown=body_markdown,
-            status=ArticleStatus.DRAFT,
-            tags=tags,
-            word_count=len(body_markdown.split()),
-        )
+        Her tur, mevcut taslağı `previous_draft` olarak ve eksik kelime sayısını somut
+        bir geri bildirim olarak verir — user prompt'un "önceki taslak varsa revize et"
+        yolu devreye girer. Bir tur taslağı UZATMADIYSA (boş/daha kısa yanıt) eldeki en
+        uzun taslak korunur; kötü bir genişletme, iyi bir taslağı asla ezmez."""
+        floor = self._word_floor(self.context.settings.brand.content_bounds.min_word_count)
+        max_words = self.context.settings.brand.content_bounds.max_word_count
+
+        for attempt in range(1, self._MAX_EXPANSION_PASSES + 1):
+            word_count = len(body_markdown.split())
+            if word_count >= floor:
+                return body_markdown
+
+            self.logger.warning(
+                f"taslak {word_count} kelime, taban {floor} — "
+                f"genişletme turu {attempt}/{self._MAX_EXPANSION_PASSES}"
+            )
+            expanded = self._generate(
+                brief,
+                research,
+                feedback=(
+                    f"- Makale çok kısa: {word_count} kelime, en az {floor} kelime olmalı "
+                    f"(üst sınır {max_words}). Önceki taslaktaki hiçbir bölümü ve cümleyi "
+                    f"silme; her `##` bölümüne araştırma notlarına dayanan 1-2 yeni paragraf "
+                    f"ekleyerek genişlet."
+                ),
+                previous_draft=body_markdown,
+            )
+            if len(expanded.split()) > word_count:
+                body_markdown = expanded
+            else:
+                self.logger.warning(
+                    "genişletme turu taslağı uzatmadı, mevcut taslak korunuyor"
+                )
+
+        final_count = len(body_markdown.split())
+        if final_count < floor:
+            self.logger.warning(
+                f"genişletme turlarına rağmen taslak {final_count} kelime (taban {floor}) — "
+                "karar Editor'e bırakılıyor"
+            )
+        return body_markdown
+
+    @classmethod
+    def _word_floor(cls, min_word_count: int) -> int:
+        return min_word_count + cls._FLOOR_MARGIN
 
     @staticmethod
     def _effective_target(brief: Brief, min_word_count: int) -> int:

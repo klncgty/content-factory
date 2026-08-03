@@ -52,3 +52,7 @@ uzunluğu olduğu gibi koru. Bir bölümü kısaltman veya silmen gerekiyorsa, k
 uzunluğu diğer bölümleri derinleştirerek telafi et — sonuç yine yukarıdaki kelime
 sınırları içinde kalmalıdır. Çıktın, kısmi bir düzeltme değil, makalenin revize
 edilmiş TAM gövdesi olsun.
+
+Geri bildirim makalenin KISA olduğunu söylüyorsa: önceki taslağı olduğu gibi temel al,
+hiçbir cümleyi silme veya özetleme; her `##` bölümüne araştırma notlarına dayanan yeni
+paragraflar ekleyerek genişlet. Çıktının kelime sayısı önceki taslaktan AZ OLAMAZ.
