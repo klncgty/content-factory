@@ -7,7 +7,7 @@ import pytest
 
 from content_factory.agents.base import AgentContext
 from content_factory.agents.editor import EditorAgent
-from content_factory.domain.exceptions import AgentOutputParsingError, AgentValidationError
+from content_factory.domain.exceptions import AgentValidationError
 from content_factory.domain.models import (
     Article,
     BodyLink,
@@ -269,14 +269,50 @@ def test_rejection_without_reasons_still_gives_writer_feedback(
     assert report.reasons  # boş kalırsa retry döngüsü aynı taslağı tekrar üretir
 
 
-def test_invalid_decision_raises_parsing_error(agent_context: AgentContext) -> None:
+def test_malformed_review_is_repaired_on_second_attempt(agent_context: AgentContext) -> None:
+    """Model biçimden saparsa (JSON yerine düz metin) inceleme bir kez daha, biçim şartı
+    hatırlatılarak istenir — biçim sapması makale hakkında bir yargı değildir."""
+    stub = StubLLMProvider(
+        responses=[_IN_SCOPE, "Makale genel olarak iyi görünüyor, onaylıyorum.", _APPROVED]
+    )
+    agent_context.llm = stub
+    agent = EditorAgent(agent_context)
+
+    report = agent(EditorInput(article=_article()))
+
+    assert report.decision is QADecision.APPROVED
+    assert len(stub.requests) == 3  # scope + bozuk inceleme + onarım turu
+    assert "yalnızca tek bir json nesnesi" in stub.requests[2].messages[0].content.lower()
+
+
+def test_unparseable_review_rejects_instead_of_crashing(agent_context: AgentContext) -> None:
+    """Onarım turu da başarısızsa geçit KAPALI kalır: makale reddedilir ama run çökmez.
+
+    Geçmişte bu durum `AgentOutputParsingError` olarak yükselip tüm yayın turunu exit 1
+    ile öldürüyordu (03.08.2026). Kritik olan, incelemesi yapılamamış bir makalenin asla
+    ONAYLANMAMASIDIR."""
+    stub = StubLLMProvider(responses=[_IN_SCOPE, "JSON değil", "yine JSON değil"])
+    agent_context.llm = stub
+    agent = EditorAgent(agent_context)
+
+    report = agent(EditorInput(article=_article()))
+
+    assert report.decision is QADecision.REJECTED
+    assert any("okunamadı" in reason for reason in report.reasons)
+    assert report.scope_decision is ScopeDecision.IN_SCOPE  # gerçek ölçüm korunur
+
+
+def test_invalid_decision_value_also_fails_closed(agent_context: AgentContext) -> None:
+    """`decision` alanı beklenmeyen bir değer taşıyorsa da sonuç red olmalı — onay
+    yalnızca modelin AÇIKÇA 'approved' demesiyle verilir."""
     agent_context.llm = StubLLMProvider(
-        responses=[_IN_SCOPE, json.dumps({"decision": "belki"})]
+        responses=[_IN_SCOPE, json.dumps({"decision": "belki"}), json.dumps({"decision": "belki"})]
     )
     agent = EditorAgent(agent_context)
 
-    with pytest.raises(AgentOutputParsingError):
-        agent(EditorInput(article=_article()))
+    report = agent(EditorInput(article=_article()))
+
+    assert report.decision is QADecision.REJECTED
 
 
 def test_empty_body_raises(agent_context: AgentContext) -> None:

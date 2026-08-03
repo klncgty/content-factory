@@ -84,7 +84,20 @@ class EditorAgent(BaseAgent[EditorInput, QAReport]):
 
         # Katman 3 — yalnızca ilk iki katman temizse (bkz. modül docstring'i).
         if not reasons:
-            reasons.extend(self._llm_quality_review(article, input_data.research))
+            try:
+                reasons.extend(self._llm_quality_review(article, input_data.research))
+            except AgentOutputParsingError as exc:
+                # Onarım turu da başarısızsa geçit KAPALI kalır: incelemesi yapılamamış
+                # bir makale asla onaylanmaz (ARCHITECTURE.md §15). Hatayı yükseltmek
+                # yerine reddetmenin sebebi, tüm run'ı çökertmemektir — böylece Writer
+                # bir kez daha denenir, olmazsa run `needs_review` ile temiz kapanır ve
+                # görsel/state kayıtları korunur (03.08.2026'da run exit 1 ile ölmüştü).
+                self.logger.error(f"{self.name}: kalite incelemesi okunamadı — geçit kapalı: {exc}")
+                reasons.append(
+                    "Editör kalite incelemesi okunamadı (model geçerli JSON döndürmedi); "
+                    "makale güvenli tarafta kalmak için reddedildi — metni değiştirmeden "
+                    "yeniden dene."
+                )
 
         return QAReport(
             decision=QADecision.APPROVED if not reasons else QADecision.REJECTED,
@@ -224,7 +237,28 @@ class EditorAgent(BaseAgent[EditorInput, QAReport]):
             article_body=article.body_markdown,
         )
         content = self.call_llm(system_prompt=prompts.system, user_message=user_message)
-        return self._parse_review(content)
+        try:
+            return self._parse_review(content)
+        except AgentOutputParsingError as exc:
+            # Biçim sapması geçici bir arızadır, makale hakkında bir yargı DEĞİLDİR:
+            # 03.08.2026'da model JSON yerine ayrıştırılamayan bir yanıt döndürdü ve
+            # yayın turu tamamen düştü. Kararı burada uydurmak yerine (ne onay ne red)
+            # aynı incelemeyi bir kez daha, biçim şartı hatırlatılarak isteriz.
+            self.logger.warning(
+                f"{self.name}: yanıt ayrıştırılamadı, biçim onarımı deneniyor: {exc}"
+            )
+            repaired = self.call_llm(
+                system_prompt=prompts.system,
+                user_message=(
+                    f"{user_message}\n\n## ÖNEMLİ — BİÇİM\n\n"
+                    "Önceki yanıtın geçerli JSON değildi. Yalnızca tek bir JSON nesnesi "
+                    "döndür; öncesine/sonrasına açıklama, başlık veya markdown ekleme. "
+                    'Metin içindeki tırnakları kaçır (\\"). Şema: '
+                    '{"decision": "approved" veya "rejected", "reasons": ["..."]}'
+                ),
+                temperature=0.0,
+            )
+            return self._parse_review(repaired)
 
     def _parse_review(self, content: str) -> list[str]:
         data = parse_llm_json(content, agent_name=self.name)

@@ -92,9 +92,14 @@ agents:
     # kullanılamıyor — prompt ~5k token olduğu için max_tokens bütçesi düşünmeye
     # gidiyor ve `finish_reason=length` ile BOŞ içerik dönüyordu.
     fallback_models: []
-    # 900: ölçülen çıktı ~250 token. Groq'tayken üst sınırı 8b-instant'ın 6k TPM tavanı
-    # belirliyordu; Replicate'te böyle bir tavan yok, değer yalnızca çıktı bütçesi.
-    max_tokens: 900
+    # 1800'e çıkarıldı (04.08.2026). Eski değer 900'dü ve "ölçülen çıktı ~250 token"
+    # varsayımına dayanıyordu; ama o ölçüm loglardaki HEURİSTİK sayaçtan geliyor
+    # (karakter/4, bkz. HeuristicTokenCounter) ve Türkçe metinde gerçek token sayısını
+    # az gösterir. Red gerekçeleri uzun bir liste olduğunda yanıtın bütçeye sığmama ve
+    # JSON'un ortasında kesilme riski vardı. Replicate'te dakikalık token tavanı
+    # olmadığı için cömert davranmanın maliyeti yalnızca kullanılan token kadardır;
+    # kesilmiş bir yanıtın bedeli ise tüm yayın turudur.
+    max_tokens: 1800
 
   scope_guard:
     provider: groq

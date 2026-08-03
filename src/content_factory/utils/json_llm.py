@@ -42,8 +42,13 @@ def parse_llm_json(content: str, *, agent_name: str) -> Any:
         salvaged = _first_json_value(text)
         if salvaged is not None:
             return salvaged
+        # Ham yanıtın bir kısmı hataya GÖMÜLÜR: aksi halde model biçimden saptığında
+        # geriye yalnızca "Expecting value: line 1 column 1" kalıyor ve yanıtın gerçekte
+        # ne olduğu (düz metin mi, yarım JSON mı, kaçışsız tırnak mı) hiçbir yerde
+        # görünmüyordu — 03.08.2026 editor arızası tam olarak bu yüzden teşhis edilemedi.
         raise AgentOutputParsingError(
-            f"{agent_name}: LLM yanıtı JSON olarak ayrıştırılamadı: {exc}"
+            f"{agent_name}: LLM yanıtı JSON olarak ayrıştırılamadı: {exc} — "
+            f"ham yanıt ({len(content)} karakter): {content[:300]!r}"
         ) from exc
 
 
