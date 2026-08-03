@@ -330,3 +330,33 @@ def test_retry_count_is_carried_into_report(agent_context: AgentContext) -> None
     report = agent(EditorInput(article=_article(), retry_count=2))
 
     assert report.retry_count == 2
+
+
+def test_rejects_writing_process_leftovers(agent_context: AgentContext) -> None:
+    """Gerçek vaka (04.08.2026): Writer'ın genişletme talimatı metne sızdı ve makale
+    '**Yeni paragraf:**' etiketleriyle YAYINLANDI — LLM incelemesi bunu onaylamıştı.
+    Bu yüzden kontrol deterministik katmandadır."""
+    body = _body(700) + "\n\n**Yeni paragraf:** Temizliği rutin hâle getirmek önemlidir."
+    agent_context.llm = StubLLMProvider(responses=[_IN_SCOPE, _APPROVED])
+    agent = EditorAgent(agent_context)
+
+    report = agent(EditorInput(article=_article(body_markdown=body)))
+
+    assert report.decision is QADecision.REJECTED
+    assert any("etiket kalıntısı" in reason for reason in report.reasons)
+
+
+def test_legitimate_sentences_are_not_flagged_as_leftovers(agent_context: AgentContext) -> None:
+    """Kalıp dar olmalı: 'yeni', 'bölüm', 'ek olarak' gibi sözcükler makalede meşru
+    biçimde geçer ve bunlar reddedilmemeli."""
+    body = (
+        _body(700)
+        + "\n\n## Yeni Bir Tahta Aldığınızda\n\nEk olarak, sirke de kullanabilirsiniz. "
+        "Bu bölüm çok önemlidir: tahtayı iyice kurulayın."
+    )
+    agent_context.llm = StubLLMProvider(responses=[_IN_SCOPE, _APPROVED])
+    agent = EditorAgent(agent_context)
+
+    report = agent(EditorInput(article=_article(body_markdown=body)))
+
+    assert report.decision is QADecision.APPROVED

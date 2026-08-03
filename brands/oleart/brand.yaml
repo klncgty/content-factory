@@ -9,7 +9,12 @@ website: https://oleart.co
 language: tr
 
 content_bounds:
-  min_word_count: 800
+  # 800 -> 700 (04.08.2026). 800'lük taban modeli sürekli "uzatma" moduna sokuyordu:
+  # Writer hedefi tutturmak için bölüm sonlarına dolgu paragraflar ekliyor, genişletme
+  # turunda ise talimat metne sızabiliyordu (yayından geri alınan makalede altı yerde
+  # "**Yeni paragraf:**" etiketi kalmıştı). Daha düşük bir taban, modelin doğal
+  # uzunluğuna yakın olduğu için şişirmeye gerek bırakmıyor.
+  min_word_count: 700
   max_word_count: 1500
 
 forbidden_words:

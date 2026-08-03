@@ -17,6 +17,8 @@ Kontroller bilinçli olarak ÜÇ katmana ve **ucuzdan pahalıya** doğru sırala
 
 from __future__ import annotations
 
+import re
+
 from content_factory.agents.base import AgentContext, BaseAgent
 from content_factory.domain.exceptions import (
     AgentConfigurationError,
@@ -37,6 +39,16 @@ from content_factory.guards.grounding_guard import GroundingGuard, reference_tex
 from content_factory.guards.scope_guard import ScopeGuard
 from content_factory.utils.json_llm import parse_llm_json
 from content_factory.utils.text import blog_url
+
+_META_ARTIFACT = re.compile(
+    # Satır başındaki "**Yeni paragraf:**" türü etiketler ve "(genişletildi)" gibi
+    # süreç notları. Kalıp bilinçli olarak DAR: makalede meşru biçimde geçebilecek
+    # "yeni" veya "bölüm" sözcüklerini değil, yalnızca iki nokta üst üste ile biten
+    # etiket biçimini ve parantez içindeki süreç notlarını arar.
+    r"(?im)^\s*[*_#\s]*((?:yeni|ek|ekstra|ilave|eklenen|genişletilmiş|revize\s+edilmiş)"
+    r"\s+(?:paragraf|bölüm|cümle|metin|makale))[*_\s]*:"
+    r"|\((?:genişletildi|revize\s+edildi|eklendi\s*-\s*uzunluk)\)",
+)
 
 
 class EditorAgent(BaseAgent[EditorInput, QAReport]):
@@ -66,6 +78,7 @@ class EditorAgent(BaseAgent[EditorInput, QAReport]):
 
         reasons = [
             *self._check_forbidden_terms(article),
+            *self._check_meta_artifacts(article),
             *self._check_word_count(article),
             *self._check_link_integrity(article, input_data.link_plan),
             *self._check_grounding(article, input_data.research),
@@ -124,6 +137,27 @@ class EditorAgent(BaseAgent[EditorInput, QAReport]):
             if claim.lower() in haystack:
                 reasons.append(f"Yasaklı iddia kullanılmış: {claim!r} — kaldır.")
         return reasons
+
+    @staticmethod
+    def _check_meta_artifacts(article: Article) -> list[str]:
+        """Yazma sürecine ait talimat/etiket kalıntıları gövdeye sızmış mı?
+
+        Gerçek vaka (04.08.2026): Writer'ın uzunluk genişletme turunda verilen "yeni
+        paragraf ekle" talimatını model bir başlık sanıp eklediği her paragrafın önüne
+        "**Yeni paragraf:**" yazdı; makale bu hâliyle yayınlandı ve elle geri alınmak
+        zorunda kalındı. LLM kalite incelemesi (katman 3) bunu ONAYLADI — okuyucuya
+        anlamsız görünen bu tür artıklar modelin dikkatini çekmiyor.
+
+        Kontrol deterministik: yayın için ölümcül, tarifi kolay ve LLM'e sormaya
+        değmeyecek kadar kesin bir kusur."""
+        leaks = _META_ARTIFACT.findall(article.body_markdown)
+        if not leaks:
+            return []
+        unique = sorted({match.strip() for match in leaks})
+        return [
+            f"Metinde yazma sürecine ait etiket kalıntısı var: {unique} — bunları "
+            "kaldır, makale baştan öyle yazılmış gibi tek parça okunmalı."
+        ]
 
     def _check_word_count(self, article: Article) -> list[str]:
         bounds = self.context.settings.brand.content_bounds

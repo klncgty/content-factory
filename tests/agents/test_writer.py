@@ -114,7 +114,7 @@ def _long_markdown(word_count: int) -> str:
 def test_short_draft_triggers_expansion_with_previous_draft(
     agent_context: AgentContext,
 ) -> None:
-    """İlk taslak tabanın (min_word_count + 100) altındaysa Writer, Editor'ü beklemeden
+    """İlk taslak tabanın (= Editor'ün alt sınırı) altındaysa Writer, Editor'ü beklemeden
     kendi genişletme turunu döndürür ve bu turda taslağı SIFIRDAN yazdırmak yerine
     `previous_draft` olarak verir."""
     long_draft = _long_markdown(950)
@@ -170,3 +170,31 @@ def test_forbidden_words_included_in_prompt(agent_context: AgentContext) -> None
 
     prompt = stub.requests[0].messages[0].content
     assert "mucize" in prompt  # brand.yaml: forbidden_words
+
+
+def test_expansion_feedback_forbids_labeling_added_text(agent_context: AgentContext) -> None:
+    """Genişletme turunun geri bildirimi, eklenen metnin ETİKETLENMEMESİNİ açıkça
+    söylemeli. Gerçek vaka (04.08.2026): bu söylenmediğinde model eklediği paragrafların
+    başına '**Yeni paragraf:**' yazdı ve makale o hâliyle yayınlandı."""
+    stub = StubLLMProvider(responses=[_SAMPLE_MARKDOWN, _long_markdown(900)])
+    agent_context.llm = stub
+    agent = WriterAgent(agent_context)
+
+    agent(_writer_input())
+
+    expansion_prompt = stub.requests[1].messages[0].content
+    assert "ETİKETLEME" in expansion_prompt
+    assert "Yeni paragraf:" in expansion_prompt  # neyin yazılmayacağı örneklenmiş
+
+
+def test_target_length_is_not_inflated_above_brief(agent_context: AgentContext) -> None:
+    """Hedef, Strategist'in belirlediği değerdir — alt sınırın %50 üstüne şişirilmez.
+    Şişirilmiş hedef modeli bölüm sonlarına dolgu paragraf eklemeye zorluyordu."""
+    stub = StubLLMProvider(responses=[_long_markdown(900)])
+    agent_context.llm = stub
+    agent = WriterAgent(agent_context)
+
+    agent(_writer_input())
+
+    prompt = stub.requests[0].messages[0].content
+    assert "yaklaşık 900 kelime" in prompt  # brief.target_word_count = 900

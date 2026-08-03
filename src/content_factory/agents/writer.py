@@ -40,11 +40,14 @@ class WriterAgent(BaseAgent[WriterInput, Article]):
         }
     )
 
-    _FLOOR_MARGIN = 100
-    """Writer'ın kendi tabanı, Editor'ün alt sınırının bu kadar ÜSTÜNDEDİR
-    (800 -> 900). Alt sınırın tam üstünü hedeflemek yeterli değil: SEO/Linker
-    adımları metni değiştirmez ama modelin kelime sayımı bizimkiyle birebir örtüşmez;
-    pay bırakılmazsa taslak sınırın birkaç kelime altında kalıp yine reddedilir."""
+    _FLOOR_MARGIN = 0
+    """Writer'ın tabanı ile Editor'ün alt sınırı AYNIDIR.
+
+    Önce 100 kelimelik bir pay bırakılmıştı, ama bu pay gereksiz: her iki taraf da
+    kelimeyi aynı biçimde sayıyor (`len(body.split())`), aradaki SEO/Linker adımları
+    metni kısaltmıyor. Payın tek etkisi, modeli zaten tutturduğu bir uzunluğun üstüne
+    çıkmaya zorlamak ve gereksiz genişletme turları doğurmaktı (bkz. `_expand_to_floor`
+    ve 04.08.2026'da yayından geri alınan makale)."""
 
     _MAX_EXPANSION_PASSES = 2
     """Taban tutturulamadığında yapılacak en fazla genişletme turu. Her tur ucuz bir
@@ -139,8 +142,14 @@ class WriterAgent(BaseAgent[WriterInput, Article]):
                 feedback=(
                     f"- Makale çok kısa: {word_count} kelime, en az {floor} kelime olmalı "
                     f"(üst sınır {max_words}). Önceki taslaktaki hiçbir bölümü ve cümleyi "
-                    f"silme; her `##` bölümüne araştırma notlarına dayanan 1-2 yeni paragraf "
-                    f"ekleyerek genişlet."
+                    f"silme; bölümleri araştırma notlarına dayanarak derinleştir.\n"
+                    # Talimat metne SIZDI: model bu geri bildirimi bir etiket sanıp
+                    # eklediği paragrafların başına "**Yeni paragraf:**" yazdı ve makale
+                    # o hâliyle yayınlandı (04.08.2026, geri alındı). Çıktının nasıl
+                    # GÖRÜNMEMESİ gerektiği bu yüzden açıkça söyleniyor.
+                    "- Eklediğin metni ETİKETLEME. Çıktıda 'Yeni paragraf:', 'Ek bölüm:', "
+                    "'(genişletildi)' gibi bir işaret bulunmasın; makale, baştan öyle "
+                    "yazılmış gibi tek parça ve doğal okunmalı."
                 ),
                 previous_draft=body_markdown,
             )
@@ -165,15 +174,15 @@ class WriterAgent(BaseAgent[WriterInput, Article]):
 
     @staticmethod
     def _effective_target(brief: Brief, min_word_count: int) -> int:
-        """Writer'a verilen hedef uzunluk.
+        """Writer'a verilen hedef uzunluk — Strategist'in belirlediği hedefin kendisi.
 
-        Modeller hedefin sürekli ALTINDA kalıyor: aynı brief ile ölçülen değerler hedef
-        1000 kelimeyken 542-975 (ortalama ~%70). Hedefi olduğu gibi vermek makalelerin
-        yarısının editor'ün alt sınırına takılıp gereksiz yeniden yazma turu doğurması
-        demekti; bu yüzden hedef, alt sınırın %50 üstüne çekilerek sapmaya pay bırakılır.
-        Üst sınır (`max_word_count`) prompt'ta ayrıca verildiği için aşırı uzama riski
-        editor tarafından zaten yakalanır."""
-        return max(brief.target_word_count, int(min_word_count * 1.5))
+        Bir dönem hedef, alt sınırın %50 üstüne çekiliyordu (modeller hedefin ~%70'ini
+        yazdığı için). Bu telafi artık yapılmıyor: alt sınır 700'e indirildikten sonra
+        modelin doğal uzunluğu zaten tabanın üstünde kalıyor ve şişirilmiş bir hedef,
+        modeli bölüm sonlarına dolgu paragraf eklemeye zorlamaktan başka bir işe
+        yaramıyordu. Uzunluk garantisi artık prompt'taki hedefe değil, üretimden SONRA
+        ölçüp gerekirse genişleten `_expand_to_floor`a dayanıyor."""
+        return max(brief.target_word_count, min_word_count)
 
     @classmethod
     def _words_per_section(cls, brief: Brief, min_word_count: int) -> int:
