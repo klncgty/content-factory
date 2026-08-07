@@ -97,6 +97,9 @@ class ScopeGuard:
             model=model,
             temperature=0.0,
             max_tokens=300,
+            # Bu çağrı `BaseAgent.build_llm_request`'ten geçmediği için `response_format`
+            # config'ten değil buradan gelir — yanıt her hâlükârda JSON olmak zorunda.
+            response_format="json_object",
         )
         response = llm.generate(request, agent_name="scope_guard", run_id=run_id)
         data = parse_llm_json(response.content, agent_name="scope_guard")

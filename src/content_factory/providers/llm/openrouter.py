@@ -182,13 +182,18 @@ class OpenRouterProvider(BaseLLMProvider):
     def _build_payload(request: LLMRequest, *, model: str, stream: bool) -> dict[str, object]:
         messages = [{"role": "system", "content": request.system_prompt}]
         messages.extend({"role": m.role, "content": m.content} for m in request.messages)
-        return {
+        payload: dict[str, object] = {
             "model": model,
             "messages": messages,
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
             "stream": stream,
         }
+        if request.response_format == "json_object":
+            # OpenRouter yapısal çıktıyı desteklemeyen modellerde parametreyi sessizce
+            # yok sayar (400 döndürmez), bu yüzden Groq'taki gibi bir düşürme yolu gerekmez.
+            payload["response_format"] = {"type": "json_object"}
+        return payload
 
     def _post(self, payload: dict[str, object]) -> httpx.Response:
         model = str(payload["model"])

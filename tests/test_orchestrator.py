@@ -255,6 +255,31 @@ def test_editor_rejection_triggers_rewrite_with_feedback(orchestrate) -> None:
     assert len(fakes["image_generator"].calls) == 1
 
 
+def test_unreadable_review_reruns_editor_without_rewriting(orchestrate) -> None:
+    """Okunamayan bir inceleme makale hakkında bir yargı DEĞİLDİR. 06.08.2026'da bu
+    durum yeniden yazdırmayı tetikledi: sağlam bir taslak boşuna bozuldu ve deneme
+    hakkı yandı. Aynı metinle Editor tekrar denenmelidir."""
+    reports = [
+        QAReport(
+            decision=QADecision.REJECTED,
+            scope_decision=ScopeDecision.IN_SCOPE,
+            reasons=["Editör kalite incelemesi okunamadı."],
+            review_unavailable=True,
+        ),
+        QAReport(decision=QADecision.APPROVED, scope_decision=ScopeDecision.IN_SCOPE),
+    ]
+    state, fakes = orchestrate(qa_reports=reports)
+
+    assert state.status is RunStatus.COMPLETED
+    assert len(fakes["editor"].calls) == 2
+    # Asıl iddia: Writer ikinci kez ÇALIŞMADI.
+    assert len(fakes["writer"].calls) == 1
+    # Aynı makale yeniden incelendi.
+    assert fakes["editor"].calls[0].article.body_markdown == (
+        fakes["editor"].calls[1].article.body_markdown
+    )
+
+
 def test_needs_review_after_max_retries(orchestrate, agent_context: AgentContext) -> None:
     rejected = QAReport(
         decision=QADecision.REJECTED,

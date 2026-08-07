@@ -81,31 +81,22 @@ class GroqProvider(BaseLLMProvider):
     def _do_generate(self, request: LLMRequest, *, model: str) -> LLMResponse:
         self._require_api_key()
         payload = self._build_payload(request, model=model)
-        try:
-            response = self._post(payload)
-        except LLMInvalidRequestError as exc:
-            # İki durumda istek düzeltilip TEK bir kez daha denenir; ikisi de
-            # `LLMInvalidRequestError` ailesinde olduğu için tek yerde ayrıştırılır.
-            if isinstance(exc, LLMRequestTooLargeError):
-                # Aynı agent'ın prompt'u çalışma anında büyüyebiliyor (ör. Writer'ın
-                # revizyon turunda önceki taslak da prompt'a giriyor) ve statik bir
-                # max_tokens değeri her iki durumu birden karşılayamıyor. Groq aşımın
-                # miktarını bildirdiği için istek o kadar daraltılır: yarısı üretilmiş
-                # bir makaleyi çöpe atmaktansa biraz daha kısa bir yanıt yeğdir.
-                payload = self._shrink_max_tokens(payload, exc, model=model)
-            elif "reasoning_format" in str(exc):
-                # Model ailesi tahmini yanlıştı: bu model parametreyi desteklemiyor.
-                self._logger.warning(
-                    f"reasoning_format desteklenmiyor model={model} — parametresiz denenecek"
-                )
-                payload = {k: v for k, v in payload.items() if k != "reasoning_format"}
-            else:
-                raise
+        # İstek en fazla iki kez düzeltilip yeniden denenir. Düzeltmelerin hepsi
+        # `LLMInvalidRequestError` ailesinde olduğu için tek yerde ayrıştırılır; birden
+        # fazla tur gerekmesinin sebebi, bir modelin hem `reasoning_format`'ı hem
+        # `response_format`'ı reddedebilmesi (Groq 400'de yalnızca ilk sorunu bildirir).
+        for _ in range(2):
+            try:
+                response = self._post(payload)
+                break
+            except LLMInvalidRequestError as exc:
+                payload = self._correct_payload(payload, exc, model=model)
+        else:
             response = self._post(payload)
         data = response.json()
         content = self._extract_output_text(data)
         usage_data = data.get("usage", {}) or {}
-        
+
         finish_reason = "stop"
         choices = data.get("choices", [])
         if choices and isinstance(choices, list) and len(choices) > 0:
@@ -137,6 +128,29 @@ class GroqProvider(BaseLLMProvider):
             ),
             finish_reason=finish_reason,
         )
+
+    def _correct_payload(
+        self, payload: dict[str, object], exc: LLMInvalidRequestError, *, model: str
+    ) -> dict[str, object]:
+        """400 alan bir payload'ı, hatanın söylediğine göre düzeltip döndürür.
+        Düzeltilemeyen bir 400'de orijinal hata yükseltilir."""
+        if isinstance(exc, LLMRequestTooLargeError):
+            # Aynı agent'ın prompt'u çalışma anında büyüyebiliyor (ör. Writer'ın
+            # revizyon turunda önceki taslak da prompt'a giriyor) ve statik bir
+            # max_tokens değeri her iki durumu birden karşılayamıyor. Groq aşımın
+            # miktarını bildirdiği için istek o kadar daraltılır: yarısı üretilmiş
+            # bir makaleyi çöpe atmaktansa biraz daha kısa bir yanıt yeğdir.
+            return self._shrink_max_tokens(payload, exc, model=model)
+        for parameter in ("reasoning_format", "response_format"):
+            # Model ailesi tahmini yanlıştı: bu model parametreyi desteklemiyor.
+            # `response_format` düşürüldüğünde JSON garantisi prompt seviyesine iner —
+            # çağıran taraf (`utils.json_llm.parse_llm_json`) bunu zaten kaldırabiliyor.
+            if parameter in payload and parameter in str(exc):
+                self._logger.warning(
+                    f"{parameter} desteklenmiyor model={model} — parametresiz denenecek"
+                )
+                return {key: value for key, value in payload.items() if key != parameter}
+        raise exc
 
     def stream(
         self, request: LLMRequest, *, agent_name: str, run_id: str
@@ -190,6 +204,11 @@ class GroqProvider(BaseLLMProvider):
         }
         if model.startswith(self.INLINE_REASONING_MODEL_PREFIXES):
             payload["reasoning_format"] = "parsed"
+        if request.response_format == "json_object":
+            # Yapısal çıktı: model JSON üretmeye gramer seviyesinde zorlanır. Groq bu
+            # kipte prompt'un "JSON" sözcüğünü içermesini şart koşar — JSON isteyen
+            # agent'ların prompt'ları zaten şemayı yazdığı için bu sağlanmış durumda.
+            payload["response_format"] = {"type": "json_object"}
         return payload
 
     def _post(self, payload: dict[str, object]) -> httpx.Response:

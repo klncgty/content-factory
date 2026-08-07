@@ -157,6 +157,10 @@ class BaseAgent[TIn, TOut](ABC):
             temperature=temperature if temperature is not None else (config.temperature or 0.7),
             max_tokens=max_tokens if max_tokens is not None else (config.max_tokens or 2000),
             fallback_models=config.fallback_models,
+            # JSON bekleyip beklemediği agent'ın kodunda değil, config'de yazar
+            # (`models.yaml: agents.{rol}.response_format`) — çünkü bunu destekleyip
+            # desteklememek sağlayıcıya/modele bağlıdır ve model seçimi config'in işidir.
+            response_format=config.response_format,
         )
 
     def call_llm(self, *, system_prompt: str, user_message: str, **kwargs: object) -> str:

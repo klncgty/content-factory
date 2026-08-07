@@ -81,10 +81,20 @@ agents:
 
   editor:
     model: openai/gpt-oss-20b:free
-    temperature: 0.2
+    # 0.0 — bu agent bir "hakem"dir ve aynı makale hakkında aynı kararı vermelidir.
+    # 0.2 ile aynı metin farklı turlarda farklı gerekçelerle reddedilebiliyordu.
+    temperature: 0.0
     max_tokens: 3000
+    # Yanıt yapısal çıktıyla (JSON) zorlanır — destekleyen sağlayıcıda model şema
+    # dışına çıkamaz, desteklemeyende alan sessizce düşer
+    # (bkz. providers/llm/models.py::ResponseFormat).
+    response_format: json_object
     # Bu agent zorunlu geçittir (ARCHITECTURE.md §3) — farklı bir sağlayıcı kullanmak
     # (writer'dan farklı bir "göz") kör noktaları azaltmak için kasıtlı bir tasarım tercihidir.
+    #
+    # `fallback_provider` ile ikincil bir SAĞLAYICI da tanımlanabilir (bkz.
+    # brands/oleart/models.yaml): birincil sağlayıcının kotası dolduğunda istek,
+    # o sağlayıcıya ait model adıyla yeniden hedeflenip oraya taşınır.
 
   scope_guard:
     # ScopeGuard.post_check burayı kullanır (bkz. guards/scope_guard.py). EditorAgent'ın

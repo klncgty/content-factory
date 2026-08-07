@@ -217,6 +217,14 @@ class QAReport(DomainModel):
     reasons: list[str] = Field(default_factory=list)
     retry_count: int = 0
 
+    review_unavailable: bool = False
+    """Kalite incelemesi HİÇ YAPILAMADI (model geçerli JSON döndürmedi, onarım turu da
+    başarısız). Karar yine `rejected`'tır — incelenmemiş içerik yayınlanmaz — ama bu
+    reddin makale hakkında hiçbir şey söylemediğini belirtir: Orchestrator bu durumda
+    Writer'ı yeniden çalıştırmaz, aynı metinle Editor'ü tekrar dener (bkz.
+    `orchestrator.py::_review_with_retries`). Ayrım önemli: 06.08.2026'da okunamayan bir
+    inceleme yüzünden sağlam bir taslak boşuna yeniden yazdırıldı ve deneme hakkı yandı."""
+
 
 class EditorInput(DomainModel):
     article: Article

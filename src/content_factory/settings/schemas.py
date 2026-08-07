@@ -7,6 +7,8 @@ Tüm modeller `extra="allow"` ile tanımlanır: YAML dosyalarına yeni alanlar e
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -75,12 +77,35 @@ class EngineConfig(YamlModel):
 # --------------------------------------------------------------------------- config/models.yaml
 
 
+class FallbackProviderConfig(YamlModel):
+    """Bir agent'ın BİRİNCİL sağlayıcısı tümden başarısız olduğunda geçilecek İKİNCİL
+    sağlayıcı (bkz. `providers/llm/factory.py::ProviderChain`).
+
+    `fallback_models` neden yetmiyor: o liste AYNI sağlayıcı içinde denenir ve model
+    adları sağlayıcıya özgüdür (Groq'ta `llama-3.3-70b-versatile`, Replicate'te
+    `meta/meta-llama-3-70b-instruct`). Sağlayıcı değiştiğinde model adının da değişmesi
+    gerektiği için ikincil sağlayıcı kendi model bilgisini taşır."""
+
+    provider: str
+    model: str
+    fallback_models: list[str] = Field(default_factory=list)
+    temperature: float | None = None
+    max_tokens: int | None = None
+
+
 class AgentModelConfig(YamlModel):
     model: str | None = None
     provider: str | None = None
     temperature: float | None = None
     max_tokens: int | None = None
     fallback_models: list[str] = Field(default_factory=list)
+
+    response_format: Literal["text", "json_object"] = "text"
+    """`json_object`, sağlayıcının yapısal çıktı kipini açar — JSON bekleyen agent'lar
+    (Editor, ScopeGuard, SEO, Research, Strategist, TopicScout) için. Desteklemeyen
+    sağlayıcı/modelde sessizce düşer (bkz. `providers/llm/models.py::ResponseFormat`)."""
+
+    fallback_provider: FallbackProviderConfig | None = None
 
     # Yalnızca image_generator için anlamlı. Hangi alanın desteklendiği modele göre
     # değişir (ör. gemini-2.5-flash-image `aspect_ratio` destekler, `resolution`

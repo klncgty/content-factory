@@ -9,10 +9,22 @@ Kontroller bilinçli olarak ÜÇ katmana ve **ucuzdan pahalıya** doğru sırala
 2. `ScopeGuard.post_check` (ucuz sınıflandırma modeli): Writer'ın konudan sapıp
    sapmadığı. Her zaman çalışır — `QAReport.scope_decision` gerçek bir ölçüme dayanmalı,
    "kontrol edilmedi" diye varsayılan bir değer taşımamalıdır.
-3. LLM kalite incelemesi (pahalı model): dil, akıcılık, tekrar, ton, tutarlılık.
-   Yalnızca ilk iki katman temiz geçtiyse çalışır — makale zaten reddedilecekse
-   pahalı çağrıyı yapmanın bir faydası yok, Writer'a verilecek somut geri bildirim
-   ilk iki katmandan zaten çıkmış durumdadır.
+3. LLM kalite incelemesi (pahalı model): yalnızca ÖZNEL yargı — akıcılık, tekrar, ton,
+   iç tutarlılık. Yalnızca ilk iki katman temiz geçtiyse çalışır: makale zaten
+   reddedilecekse pahalı çağrıyı yapmanın bir faydası yok, Writer'a verilecek somut
+   geri bildirim ilk iki katmandan zaten çıkmış durumdadır.
+
+LLM katmanına duyulan güven SINIRLIDIR ve bu bilinçlidir. 06.08.2026 yayın run'ında
+model aynı makaleyi dört kez farklı gerekçelerle reddetti; gerekçelerin çoğu uydurmaydı
+(metinde geçmeyen ifadeler), biri ihlal saymadığı maddeleri sıralayan bir kontrol listesi
+raporuydu, sonuncusu İngilizce yazılmıştı. Bu yüzden katman 3 iki taraftan kıskaca alındı:
+
+- ÇIKTI BİÇİMİ: yanıt `models.yaml: agents.editor.response_format` ile yapısal çıktıya
+  (JSON) zorlanır; destekleyen sağlayıcıda model gramer seviyesinde şema dışına çıkamaz.
+- İDDİA DOĞRULAMA: her gerekçe makaleden BİREBİR bir alıntı taşımak zorundadır ve
+  `guards/review_guard.py` o alıntının metinde gerçekten geçtiğini ölçer. Geçmeyen
+  gerekçe karara katılmaz. Doğrulanan gerekçe kalmazsa makale ONAYLANIR — çünkü elde
+  gösterilebilir tek bir ihlal bile yoktur.
 """
 
 from __future__ import annotations
@@ -36,6 +48,7 @@ from content_factory.domain.models import (
     ScopeRejectionRecord,
 )
 from content_factory.guards.grounding_guard import GroundingGuard, reference_texts_for
+from content_factory.guards.review_guard import ReviewFinding, ReviewGuard
 from content_factory.guards.scope_guard import ScopeGuard
 from content_factory.utils.json_llm import parse_llm_json
 from content_factory.utils.text import blog_url
@@ -57,7 +70,10 @@ class EditorAgent(BaseAgent[EditorInput, QAReport]):
         {
             "tone",
             "writing_rules",
-            "content_scope",
+            # `content_scope` bilinçli olarak YOK: kapsam kararı katman 2'de
+            # (`ScopeGuard.post_check`) deterministik olarak veriliyor. LLM'e ayrıca
+            # sormak, hem prompt'u büyütüyor hem de modele gerekçe listesine ekleyeceği
+            # fazladan bir kontrol listesi maddesi veriyordu.
             "forbidden_words",
             "forbidden_claims",
             "key_facts",
@@ -96,16 +112,18 @@ class EditorAgent(BaseAgent[EditorInput, QAReport]):
             self._log_scope_rejection(article, scope_result.reason)
 
         # Katman 3 — yalnızca ilk iki katman temizse (bkz. modül docstring'i).
+        review_unavailable = False
         if not reasons:
             try:
                 reasons.extend(self._llm_quality_review(article, input_data.research))
             except AgentOutputParsingError as exc:
                 # Onarım turu da başarısızsa geçit KAPALI kalır: incelemesi yapılamamış
                 # bir makale asla onaylanmaz (ARCHITECTURE.md §15). Hatayı yükseltmek
-                # yerine reddetmenin sebebi, tüm run'ı çökertmemektir — böylece Writer
-                # bir kez daha denenir, olmazsa run `needs_review` ile temiz kapanır ve
-                # görsel/state kayıtları korunur (03.08.2026'da run exit 1 ile ölmüştü).
+                # yerine reddetmenin sebebi, tüm run'ı çökertmemektir — böylece run
+                # `needs_review` ile temiz kapanır ve görsel/state kayıtları korunur
+                # (03.08.2026'da run exit 1 ile ölmüştü).
                 self.logger.error(f"{self.name}: kalite incelemesi okunamadı — geçit kapalı: {exc}")
+                review_unavailable = True
                 reasons.append(
                     "Editör kalite incelemesi okunamadı (model geçerli JSON döndürmedi); "
                     "makale güvenli tarafta kalmak için reddedildi — metni değiştirmeden "
@@ -117,6 +135,10 @@ class EditorAgent(BaseAgent[EditorInput, QAReport]):
             scope_decision=scope_result.decision,
             reasons=reasons,
             retry_count=input_data.retry_count,
+            # Bu bayrak Orchestrator'a "makale hakkında bir yargı verilmedi" der; oradaki
+            # retry döngüsü Writer'ı boşuna çalıştırmamak için buna bakar (bkz.
+            # `orchestrator.py::_review_with_retries`).
+            review_unavailable=review_unavailable,
         )
 
     # ------------------------------------------------------- katman 1: deterministik
@@ -261,7 +283,6 @@ class EditorAgent(BaseAgent[EditorInput, QAReport]):
         user_message = prompts.render_user(
             tone=knowledge.get_tone(),
             writing_rules=knowledge.get_writing_rules(),
-            content_scope=knowledge.get_content_scope(),
             forbidden_words=", ".join(self.context.settings.brand.forbidden_words) or "(yok)",
             forbidden_claims="\n".join(
                 f"- {claim}" for claim in self.context.settings.brand.forbidden_claims
@@ -272,12 +293,14 @@ class EditorAgent(BaseAgent[EditorInput, QAReport]):
         )
         content = self.call_llm(system_prompt=prompts.system, user_message=user_message)
         try:
-            return self._parse_review(content)
+            findings = self._parse_review(content)
         except AgentOutputParsingError as exc:
             # Biçim sapması geçici bir arızadır, makale hakkında bir yargı DEĞİLDİR:
             # 03.08.2026'da model JSON yerine ayrıştırılamayan bir yanıt döndürdü ve
             # yayın turu tamamen düştü. Kararı burada uydurmak yerine (ne onay ne red)
             # aynı incelemeyi bir kez daha, biçim şartı hatırlatılarak isteriz.
+            # (`response_format` destekleyen sağlayıcıda bu yol pratikte hiç çalışmaz;
+            # Replicate gibi yapısal çıktısı olmayan bir fallback'te hâlâ gerekli.)
             self.logger.warning(
                 f"{self.name}: yanıt ayrıştırılamadı, biçim onarımı deneniyor: {exc}"
             )
@@ -288,13 +311,38 @@ class EditorAgent(BaseAgent[EditorInput, QAReport]):
                     "Önceki yanıtın geçerli JSON değildi. Yalnızca tek bir JSON nesnesi "
                     "döndür; öncesine/sonrasına açıklama, başlık veya markdown ekleme. "
                     'Metin içindeki tırnakları kaçır (\\"). Şema: '
-                    '{"decision": "approved" veya "rejected", "reasons": ["..."]}'
+                    '{"decision": "approved" veya "rejected", "reasons": '
+                    '[{"alinti": "...", "sorun": "...", "duzeltme": "..."}]}'
                 ),
                 temperature=0.0,
             )
-            return self._parse_review(repaired)
+            findings = self._parse_review(repaired)
 
-    def _parse_review(self, content: str) -> list[str]:
+        return self._verify_findings(article, findings)
+
+    def _verify_findings(self, article: Article, findings: list[ReviewFinding]) -> list[str]:
+        """LLM'in her iddiasını makaleye karşı sınar; doğrulanmayanı karara katmaz.
+
+        Doğrulanan gerekçe kalmazsa liste BOŞ döner, yani makale onaylanır. Bu, "model
+        reddetti ama gösterebildiği hiçbir ihlal yok" durumunun tek doğru sonucudur:
+        aksi hâlde Writer, metinde bulunmayan bir sorunu düzeltmeye çalışır ve retry
+        döngüsü kendi kendine dönerek `needs_review`e düşer (06.08.2026'da olan tam olarak
+        buydu)."""
+        review = ReviewGuard(f"{article.title}\n{article.body_markdown}").verify(findings)
+        for discarded in review.discarded:
+            self.logger.warning(
+                f"{self.name}: editör iddiası doğrulanamadı, karara katılmıyor "
+                f"[{discarded.reason}]: alıntı={discarded.finding.quote!r} "
+                f"gerekçe={discarded.finding.problem!r}"
+            )
+        if findings and not review.has_verified_findings:
+            self.logger.warning(
+                f"{self.name}: editörün {len(findings)} gerekçesinin tamamı doğrulanamadı "
+                "— makale bu katmandan geçiyor"
+            )
+        return review.feedback_lines()
+
+    def _parse_review(self, content: str) -> list[ReviewFinding]:
         data = parse_llm_json(content, agent_name=self.name)
         if not isinstance(data, dict) or "decision" not in data:
             raise AgentOutputParsingError(
@@ -302,14 +350,47 @@ class EditorAgent(BaseAgent[EditorInput, QAReport]):
             )
 
         decision = str(data["decision"]).strip().lower()
-        reasons = [str(r) for r in data.get("reasons", []) if str(r).strip()]
-
         if decision == QADecision.APPROVED.value:
             return []
-        if decision == QADecision.REJECTED.value:
+        if decision != QADecision.REJECTED.value:
+            raise AgentOutputParsingError(
+                f"{self.name}: geçersiz 'decision' değeri: {decision!r}"
+            )
+
+        # `reasons` bir liste değilse (model tek bir string ya da nesne döndürdüyse)
+        # üzerinde dolaşmak anlamsız sonuçlar üretirdi — bir string'in elemanları
+        # karakterlerdir.
+        raw_reasons = data.get("reasons") or []
+        if not isinstance(raw_reasons, list):
+            raw_reasons = [raw_reasons]
+
+        findings = [
+            finding
+            for finding in (self._as_finding(item) for item in raw_reasons)
+            if finding is not None
+        ]
+        if not findings:
             # Gerekçesiz bir red, Writer'a hiçbir şey söylemez — retry döngüsü aynı
-            # taslağı tekrar üretir. Bu yüzden en az bir gerekçe garanti edilir.
-            return reasons or ["Editör makaleyi gerekçe belirtmeden reddetti."]
-        raise AgentOutputParsingError(
-            f"{self.name}: geçersiz 'decision' değeri: {decision!r}"
-        )
+            # taslağı tekrar üretirdi. Gerekçe uyduramayan bir red, doğrulanamayan bir
+            # red ile aynı şeydir: karara katılmaz (bkz. `_verify_findings`).
+            self.logger.warning(
+                f"{self.name}: editör gerekçe belirtmeden reddetti — karar yok sayılıyor"
+            )
+        return findings
+
+    @staticmethod
+    def _as_finding(item: object) -> ReviewFinding | None:
+        """Tek bir `reasons` girdisini `ReviewFinding`'e çevirir.
+
+        Şema `{"alinti", "sorun", "duzeltme"}` bekler. Model bunun yerine düz bir string
+        döndürürse (eski şema ya da biçim sapması) bulgu alıntısız kalır ve
+        `ReviewGuard` tarafından doğrulanamadığı için elenir — sessizce kabul edilmesi,
+        doğrulama katmanını baypas etmek anlamına gelirdi."""
+        if isinstance(item, dict):
+            quote = str(item.get("alinti") or item.get("quote") or "")
+            problem = str(item.get("sorun") or item.get("problem") or "")
+            fix = str(item.get("duzeltme") or item.get("fix") or "")
+            return ReviewFinding(quote=quote, problem=problem, fix=fix) if problem else None
+        if isinstance(item, str) and item.strip():
+            return ReviewFinding(quote="", problem=item.strip())
+        return None

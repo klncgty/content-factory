@@ -86,6 +86,16 @@ class ReplicateProvider(BaseLLMProvider):
             if request.system_prompt
             else self._join_messages(request)
         )
+        if request.response_format == "json_object":
+            # Replicate'in metin modellerinde yapısal çıktı parametresi YOK: prediction
+            # input şeması modele aittir ve `response_format` gibi ortak bir alan tanımaz.
+            # Sessizce yok saymak yerine loglanır — JSON garantisi burada yalnızca
+            # prompt'taki şema talimatı kadardır ve çağıran taraf bunu bilmelidir
+            # (bkz. `utils.json_llm.parse_llm_json` kurtarma yolları).
+            self._logger.warning(
+                f"response_format=json_object Replicate'te desteklenmiyor (model={model}) — "
+                "JSON yalnızca prompt seviyesinde garanti edilir"
+            )
         payload = {
             "version": self._version_for(model),
             "input": {

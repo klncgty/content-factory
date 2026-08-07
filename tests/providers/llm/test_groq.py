@@ -215,3 +215,96 @@ def test_unsupported_reasoning_format_is_retried_without_the_parameter() -> None
     assert response.content == "tamam"
     assert len(bodies) == 2
     provider.close()
+
+
+def test_json_object_response_format_is_sent() -> None:
+    """Yapısal çıktı: model gramer seviyesinde JSON dışına çıkamaz. 06.08.2026'da
+    editor modeli JSON yerine markdown döndürüp yayın turunu düşürmüştü."""
+    bodies: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        bodies.append(_json.loads(request.content))
+        return _completion('{"decision":"approved"}')
+
+    provider = _provider(handler)
+    provider.generate(
+        _request(model="llama-3.3-70b-versatile", response_format="json_object"),
+        agent_name="editor",
+        run_id="r",
+    )
+    provider.generate(_request(model="llama-3.3-70b-versatile"), agent_name="writer", run_id="r")
+
+    assert bodies[0]["response_format"] == {"type": "json_object"}
+    assert "response_format" not in bodies[1]
+    provider.close()
+
+
+def test_unsupported_response_format_is_retried_without_the_parameter() -> None:
+    """Yapısal çıktıyı desteklemeyen bir modelde istek parametresiz tekrarlanır: JSON
+    garantisi prompt seviyesine iner ama run ölmez."""
+    bodies: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        body = _json.loads(request.content)
+        bodies.append(body)
+        if "response_format" in body:
+            return httpx.Response(
+                400,
+                json={"error": {"message": "`response_format` is not supported with this model"}},
+            )
+        return _completion('{"decision":"approved"}')
+
+    provider = _provider(handler)
+    response = provider.generate(
+        _request(model="llama-eski", response_format="json_object"),
+        agent_name="editor",
+        run_id="r",
+    )
+
+    assert response.content == '{"decision":"approved"}'
+    assert len(bodies) == 2
+    provider.close()
+
+
+def test_two_unsupported_parameters_are_both_dropped() -> None:
+    """Groq 400'de yalnızca ilk sorunu bildirir; hem `reasoning_format` hem
+    `response_format` reddedilirse istek iki kez düzeltilir."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        body = _json.loads(request.content)
+        if "reasoning_format" in body:
+            return httpx.Response(
+                400, json={"error": {"message": "`reasoning_format` is not supported"}}
+            )
+        if "response_format" in body:
+            return httpx.Response(
+                400, json={"error": {"message": "`response_format` is not supported"}}
+            )
+        return _completion("tamam")
+
+    provider = _provider(handler)
+    response = provider.generate(
+        _request(model="qwen/eski", response_format="json_object"),
+        agent_name="editor",
+        run_id="r",
+    )
+
+    assert response.content == "tamam"
+    provider.close()
+
+
+def test_undiagnosable_400_is_not_swallowed() -> None:
+    """Düzeltilemeyen bir 400 yükselir — sessizce yutulup boş yanıta dönüşmemeli."""
+    provider = _provider(
+        lambda request: httpx.Response(400, json={"error": {"message": "model bulunamadı"}})
+    )
+
+    with pytest.raises(LLMInvalidRequestError):
+        provider.generate(_request(), agent_name="editor", run_id="r")
+    provider.close()

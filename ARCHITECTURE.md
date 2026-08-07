@@ -191,7 +191,7 @@ regresyonunu hem de `scope.yaml`/`brand.yaml` ile tutarlılığı doğrular.
 | 5 | **SEOOptimizerAgent** | Meta title/description (LLM) + **deterministik slug** (`utils.text.slugify`, oleart.co'nun `build-blog.mjs`'iyle aynı kural — LLM'e sorulmaz) | draft.md, seo.yaml, faq.md | `SEOData` + slug'ı set edilmiş makale |
 | 6 | **LinkerAgent** *(LLM çağırmaz)* | Eski makaleleri (SQLite `articles`) tarar, ilgili makaleleri bulur, **yeni makalenin prose'una** doğal iç linkler ekler; eski makaleleri **prose düzeyinde değil**, yapılandırılmış `related_articles` frontmatter alanı üzerinden günceller (bkz. §5) | draft.md, SQLite articles | güncellenmiş `draft.md` + `link_plan.json` |
 | 7 | **ImageGeneratorAgent** | Bir adet temel görsel üretir (prompt deterministik olarak kurulur, LLM çağrılmaz); `cover/thumbnail/og-image` türevlerini Pillow ile crop+resize eder | makale başlığı/kategorisi, brand.md | `images/{cover,thumbnail,og_image}.webp` (run'a özel staging dizininde) |
-| 8 | **EditorAgent** *(zorunlu geçit)* | Üç katman, ucuzdan pahalıya: (1) deterministik — yasaklı kelime/iddia, `content_bounds` kelime sayısı, planlanan iç linklerin gerçekten işlendiği; (2) **ScopeGuard post-check**; (3) LLM kalite incelemesi (yalnızca ilk ikisi temizse). Reddederse gerekçeleri Writer'a `feedback` olarak döner | draft.md, link_plan.json, brand.yaml | `QAReport` (decision, scope_decision, reasons) |
+| 8 | **EditorAgent** *(zorunlu geçit)* | Üç katman, ucuzdan pahalıya: (1) deterministik — yasaklı kelime/iddia, `content_bounds` kelime sayısı, planlanan iç linklerin gerçekten işlendiği, sayısal iddia zeminlemesi; (2) **ScopeGuard post-check**; (3) LLM kalite incelemesi — yalnızca ilk ikisi temizse ve yalnızca ÖZNEL yargı için. Katman 3'ün her gerekçesi makaleden birebir alıntı taşımak zorundadır ve `ReviewGuard` tarafından metne karşı doğrulanır; doğrulanmayan gerekçe karara katılmaz (bkz. §15). Reddederse gerekçeleri Writer'a `feedback` olarak döner | draft.md, link_plan.json, brand.yaml | `QAReport` (decision, scope_decision, reasons, review_unavailable) |
 | 9 | **PublisherAgent** | Onaylı içeriği **markdown** olarak render eder (HTML üretmez), frontmatter'ı doldurur, hedef repoya (`target_repo_path`) dosyaları yazar: yeni `.md` + görseller + `related_articles` güncellenen eski `.md` dosyaları. **Git işlemi yapmaz.** | onaylı draft, SEOData, images, link_plan.json | `content/blog/*.md`, `public/blog/images/*/*.webp` (diskte, henüz commit edilmemiş) + repo köküne göreli `written_paths` |
 | 10 | **GitAgent** | `written_paths`'i `GitProvider` üzerinden `git add` → `commit` → `push` (veya PR) eder; `publish_strategy`'ye göre davranır. Kendisi subprocess çalıştırmaz | `PublisherOutput`, publish.yaml | `PublishResult` (commit sha / PR url) |
 | — | **NotifierAgent** *(Faz 2)* | Çalışma özetini bildirir | run_log.json | bildirim |
@@ -672,6 +672,30 @@ sequenceDiagram
   reddedilir. LLM incelemesi bu vakaları kaçırıyordu — makul görünen uydurma bir değeri
   ("ideal saklama 14-18°C") onaylıyordu; sayının kaynakta geçip geçmediği ise
   deterministik olarak ölçülebilir.
+- **Editör iddialarının doğrulanması** (`guards/review_guard.py`, Editor katman 3):
+  LLM hakem deterministik değildir ve buna göre muamele görür. Her red gerekçesi
+  makaleden **birebir bir alıntı** taşımak zorundadır; kod o alıntının metinde gerçekten
+  geçtiğini ölçer, geçmiyorsa gerekçe karara katılmaz. Doğrulanan gerekçe kalmazsa makale
+  onaylanır — gösterilebilir bir ihlal yoksa geçit kapalı tutulamaz.
+
+  Vaka (06.08.2026): editor aynı makaleyi dört kez, her seferinde farklı gerekçelerle
+  reddetti; gerekçelerin çoğu metinde bulunmayan ifadelere dayanıyordu, biri ihlal
+  saymadığı maddeleri sıralayan bir kontrol listesi raporuydu, sonuncusu İngilizce
+  yazılmıştı. Alınan üç önlem:
+  1. **Yapısal çıktı** (`models.yaml: response_format: json_object`) — model gramer
+     seviyesinde JSON dışına çıkamaz. Yapısal çıktısı olmayan sağlayıcılarda (Replicate)
+     alan sessizce düşer, garantiyi doğrulama katmanı üstlenir.
+  2. **İddia doğrulama** — yukarıdaki alıntı kuralı; ayrıca gerekçenin Türkçe yazıldığı
+     kontrol edilir (`utils/text.py: is_probably_turkish`), çünkü dili değiştiren bir
+     model prompt'u tümden yok saymıştır.
+  3. **Prompt'un daraltılması** — deterministik katmanların zaten ölçtüğü hiçbir şey
+     (yasaklı kelimeler, İngilizce terimler, kelime sayısı, kapsam) LLM'e sorulmaz.
+     Modele kontrol listesi vermek, onu o listeyi gerekçeye çevirmeye teşvik ediyordu.
+     LLM'e kalan tek iş öznel yargıdır: akıcılık, tekrar, ton, iç tutarlılık, örtük iddia.
+- İncelemenin **okunamaması ile reddedilmesi ayrı durumlardır** (`QAReport.review_unavailable`):
+  okunamayan bir inceleme makale hakkında bir yargı değildir, bu yüzden Orchestrator
+  Writer'ı yeniden çalıştırmaz, aynı metinle Editor'ü tekrar dener. Aksi hâlde sağlam bir
+  taslak boşuna yeniden yazdırılıp deneme hakkı yanıyordu.
 - Duplicate/keyword cannibalization kontrolü (SQLite `keywords` tablosu, `UNIQUE` benzeri
   mantık).
 - LinkerAgent'ın eski makalelere dokunuşu yalnızca yapılandırılmış frontmatter alanıyla

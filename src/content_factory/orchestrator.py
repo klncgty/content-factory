@@ -480,6 +480,16 @@ class PipelineOrchestrator:
             if report.decision is QADecision.APPROVED or attempt == max_retries:
                 return report
 
+            if report.review_unavailable:
+                # Red, makale hakkında bir yargı DEĞİL: inceleme hiç okunamadı. Metni
+                # yeniden yazdırmak sağlam bir taslağı bozar ve deneme hakkını yakar
+                # (06.08.2026'da olan buydu) — aynı makaleyle Editor'ü tekrar deniyoruz.
+                self.logger.warning(
+                    f"editör incelemesi okunamadı (deneme {attempt + 1}/{max_retries + 1}), "
+                    "makale değiştirilmeden yeniden inceleniyor"
+                )
+                continue
+
             self.logger.info(
                 f"editor reddetti (deneme {attempt + 1}/{max_retries + 1}), "
                 f"yeniden yazdırılıyor: {report.reasons}"

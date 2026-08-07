@@ -26,11 +26,30 @@ from ..support.stub_llm import StubLLMProvider
 _IN_SCOPE = json.dumps({"group_id": "olive_and_oil", "reason": "zeytinyağı hakkında"})
 _OUT_OF_SCOPE = json.dumps({"group_id": "out_of_scope", "reason": "genel diyet tavsiyesi"})
 _APPROVED = json.dumps({"decision": "approved", "reasons": []})
-_REJECTED = json.dumps({"decision": "rejected", "reasons": ["2. paragraf tekrar ediyor."]})
+
+_QUOTED_SENTENCE = "Soğuk sıkım yöntemi yağın besin değerini korur"
+"""Editörün gerekçesine çıpa olarak koyduğu, makalede BİREBİR geçen alıntı."""
+
+_REJECTED = json.dumps({
+    "decision": "rejected",
+    "reasons": [
+        {
+            "alinti": _QUOTED_SENTENCE,
+            "sorun": "Aynı fikir bir önceki bölümde anlatılmış.",
+            "duzeltme": "Bu paragrafı çıkar.",
+        }
+    ],
+})
 
 
 def _body(word_count: int = 900) -> str:
     return " ".join(["zeytinyağı"] * word_count)
+
+
+def _article_with(sentence: str, *, word_count: int = 900) -> Article:
+    """Verilen cümleyi gerçekten içeren bir makale — alıntı doğrulamasının geçebilmesi
+    için gerekli."""
+    return _article(body_markdown=f"{sentence}. {_body(word_count)}")
 
 
 def _article(**overrides: object) -> Article:
@@ -249,15 +268,69 @@ def test_llm_rejection_reasons_are_propagated(agent_context: AgentContext) -> No
     agent_context.llm = StubLLMProvider(responses=[_IN_SCOPE, _REJECTED])
     agent = EditorAgent(agent_context)
 
-    report = agent(EditorInput(article=_article()))
+    report = agent(EditorInput(article=_article_with(_QUOTED_SENTENCE)))
 
     assert report.decision is QADecision.REJECTED
-    assert report.reasons == ["2. paragraf tekrar ediyor."]
+    # Writer'a giden satır alıntıyı, sorunu ve düzeltmeyi birlikte taşır — Writer
+    # prompt'u "yalnızca alıntının geçtiği yere dokun" diyor.
+    assert report.reasons == [
+        f"«{_QUOTED_SENTENCE}» — Aynı fikir bir önceki bölümde anlatılmış. "
+        "Düzeltme: Bu paragrafı çıkar."
+    ]
 
 
-def test_rejection_without_reasons_still_gives_writer_feedback(
+def test_rejection_whose_quote_is_not_in_the_article_is_discarded(
     agent_context: AgentContext,
 ) -> None:
+    """06.08.2026 arızasının regresyon testi: editör metinde GEÇMEYEN ifadeleri gerekçe
+    göstererek aynı makaleyi dört kez reddetti. Gösterilebilir tek bir ihlal yoksa geçit
+    açılmalıdır — aksi hâlde Writer olmayan bir sorunu düzeltmeye çalışır."""
+    hallucinated = json.dumps({
+        "decision": "rejected",
+        "reasons": [
+            {
+                "alinti": "smoke point",
+                "sorun": "İngilizce sözcük kullanılmış.",
+                "duzeltme": "Türkçesini yaz.",
+            }
+        ],
+    })
+    agent_context.llm = StubLLMProvider(responses=[_IN_SCOPE, hallucinated])
+    agent = EditorAgent(agent_context)
+
+    report = agent(EditorInput(article=_article()))
+
+    assert report.decision is QADecision.APPROVED
+    assert report.reasons == []
+
+
+def test_rejection_with_english_justification_is_discarded(
+    agent_context: AgentContext,
+) -> None:
+    """Alıntı doğru olsa bile İngilizce yazılmış bir gerekçe karara katılmaz: Türkçe
+    yazmayan bir model prompt'u tümden yok saymıştır ve o geri bildirim Writer'ı da
+    dilden çıkarma riski taşır (06.08.2026'da son reddetme gerekçesi İngilizceydi)."""
+    english_review = json.dumps({
+        "decision": "rejected",
+        "reasons": [
+            {
+                "alinti": _QUOTED_SENTENCE,
+                "sorun": "The article contains phrases which are not allowed and the tone is off.",
+                "duzeltme": "Rewrite this sentence.",
+            }
+        ],
+    })
+    agent_context.llm = StubLLMProvider(responses=[_IN_SCOPE, english_review])
+    agent = EditorAgent(agent_context)
+
+    report = agent(EditorInput(article=_article_with(_QUOTED_SENTENCE)))
+
+    assert report.decision is QADecision.APPROVED
+
+
+def test_rejection_without_reasons_is_ignored(agent_context: AgentContext) -> None:
+    """Gerekçesiz bir red, Writer'a hiçbir şey söylemez — retry döngüsü aynı taslağı
+    tekrar üretirdi. Gerekçe gösteremeyen bir red, doğrulanamayan bir redle aynı şeydir."""
     agent_context.llm = StubLLMProvider(
         responses=[_IN_SCOPE, json.dumps({"decision": "rejected"})]
     )
@@ -265,8 +338,24 @@ def test_rejection_without_reasons_still_gives_writer_feedback(
 
     report = agent(EditorInput(article=_article()))
 
-    assert report.decision is QADecision.REJECTED
-    assert report.reasons  # boş kalırsa retry döngüsü aynı taslağı tekrar üretir
+    assert report.decision is QADecision.APPROVED
+    assert report.reasons == []
+
+
+def test_plain_string_reason_is_discarded(agent_context: AgentContext) -> None:
+    """Model eski şemaya (düz string gerekçe) düşerse bulgu alıntısız kalır ve elenir.
+    Sessizce kabul etmek, doğrulama katmanını baypas etmek olurdu."""
+    agent_context.llm = StubLLMProvider(
+        responses=[
+            _IN_SCOPE,
+            json.dumps({"decision": "rejected", "reasons": ["Metin genel olarak zayıf."]}),
+        ]
+    )
+    agent = EditorAgent(agent_context)
+
+    report = agent(EditorInput(article=_article()))
+
+    assert report.decision is QADecision.APPROVED
 
 
 def test_malformed_review_is_repaired_on_second_attempt(agent_context: AgentContext) -> None:

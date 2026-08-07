@@ -16,13 +16,14 @@ from collections.abc import Iterator
 
 from content_factory.providers.llm.base import BaseLLMProvider
 from content_factory.providers.llm.cache import LLMCache
-from content_factory.providers.llm.exceptions import UnknownProviderError
+from content_factory.providers.llm.exceptions import LLMError, UnknownProviderError
 from content_factory.providers.llm.groq import GroqProvider
 from content_factory.providers.llm.models import LLMRequest, LLMResponse, LLMStreamChunk
 from content_factory.providers.llm.openrouter import OpenRouterProvider
 from content_factory.providers.llm.replicate import ReplicateProvider
 from content_factory.providers.llm.retry import RetryPolicy
 from content_factory.settings.loader import Settings
+from content_factory.settings.schemas import FallbackProviderConfig
 from content_factory.state.store import StateStore
 
 _REGISTRY: dict[str, type[BaseLLMProvider]] = {}
@@ -113,6 +114,83 @@ def create_default_llm_provider(
     )
 
 
+class ProviderChain(BaseLLMProvider):
+    """Birincil sağlayıcı tümden başarısız olduğunda isteği İKİNCİL bir sağlayıcıya taşır.
+
+    `BaseLLMProvider.generate()`'in içindeki `fallback_models` döngüsü aynı sağlayıcı
+    içinde kalır; bu sınıf ise sağlayıcının KENDİSİNİ değiştirir. İkisi bilinçli olarak
+    ayrı katmanlardır: model adları sağlayıcıya özgü olduğu için sağlayıcı değişince
+    istek de yeniden hedeflenmelidir (bkz. `settings.schemas.FallbackProviderConfig`).
+
+    Gerçek vaka (Editor): Groq yapısal çıktıyı (`response_format`) destekliyor ama
+    ücretsiz kademede DAKİKALIK token tavanı var; Replicate'te tavan yok ama yapısal
+    çıktı yok. Zincir ikisinin de güçlü yanını kullanır — normal koşulda şema garantili
+    Groq yanıtı alınır, kota dolduğunda run ölmek yerine Replicate'ten devam eder.
+    """
+
+    name = "provider_chain"
+    default_api_key_env = "OPENROUTER_API_KEY"
+
+    def __init__(
+        self,
+        primary: BaseLLMProvider,
+        fallback: BaseLLMProvider,
+        fallback_config: FallbackProviderConfig,
+    ) -> None:
+        super().__init__()
+        self._primary = primary
+        self._fallback = fallback
+        self._fallback_config = fallback_config
+
+    def generate(self, request: LLMRequest, *, agent_name: str, run_id: str) -> LLMResponse:
+        try:
+            return self._primary.generate(request, agent_name=agent_name, run_id=run_id)
+        except LLMError as exc:
+            # Sağlayıcı seviyesindeki HER hatada geçilir (kota, kimlik, geçersiz istek,
+            # sunucu arızası): buraya ulaşıldığında birincil sağlayıcının kendi retry ve
+            # fallback_models döngüsü zaten tükenmiştir, elde başka seçenek yoktur.
+            self._logger.warning(
+                f"provider_fallback agent={agent_name} run_id={run_id} "
+                f"from={self._primary.name} to={self._fallback.name} error={exc}"
+            )
+            return self._fallback.generate(
+                self._retarget(request), agent_name=agent_name, run_id=run_id
+            )
+
+    def _retarget(self, request: LLMRequest) -> LLMRequest:
+        """İsteği ikincil sağlayıcının model adlarına ve limitlerine göre yeniden kurar.
+        `response_format` KORUNUR — destekleyen sağlayıcı uygular, desteklemeyen
+        (Replicate) uyarı loglayıp yok sayar."""
+        config = self._fallback_config
+        updates: dict[str, object] = {
+            "model": config.model,
+            "fallback_models": config.fallback_models,
+        }
+        if config.temperature is not None:
+            updates["temperature"] = config.temperature
+        if config.max_tokens is not None:
+            updates["max_tokens"] = config.max_tokens
+        return request.model_copy(update=updates)
+
+    def _do_generate(self, request: LLMRequest, *, model: str) -> LLMResponse:
+        raise NotImplementedError("ProviderChain _do_generate implemente etmez")
+
+    def stream(
+        self, request: LLMRequest, *, agent_name: str, run_id: str
+    ) -> Iterator[LLMStreamChunk]:
+        yield from self._primary.stream(request, agent_name=agent_name, run_id=run_id)
+
+    def health_check(self) -> bool:
+        # Zincirin amacı biri düştüğünde diğerinin devralması — birincil sağlıklıysa
+        # zincir sağlıklıdır.
+        return self._primary.health_check() or self._fallback.health_check()
+
+    def close(self) -> None:
+        self._primary.close()
+        if self._fallback is not self._primary:
+            self._fallback.close()
+
+
 class AgentScopedLLMProvider(BaseLLMProvider):
     name = "agent_scoped"
     default_api_key_env = "OPENROUTER_API_KEY"
@@ -165,12 +243,11 @@ def create_agent_scoped_llm_provider(
     # `image_generator` için konfigürasyon LLM provider yerine özel bir ImageProvider kullanır.
     non_llm_agents = {"image_generator"}
 
-    for agent_name in settings.models.agents:
-        if agent_name in non_llm_agents:
-            continue
-
-        agent_cfg = settings.models.for_agent(agent_name)
-        provider_name = agent_cfg.provider or settings.models.default_provider
+    def instance_for(provider_name: str) -> BaseLLMProvider:
+        """Sağlayıcı örnekleri agent'lar arasında PAYLAŞILIR — her sağlayıcının kendi
+        rate-limit durumu ve HTTP bağlantı havuzu tek bir yerde tutulsun diye (aynı
+        sağlayıcıya iki ayrı örnekten gitmek, bir modelin 429 aldığını diğerinden
+        gizlerdi)."""
         if provider_name not in provider_instances:
             provider_instances[provider_name] = _build_from_settings(
                 provider_name,
@@ -182,22 +259,25 @@ def create_agent_scoped_llm_provider(
                 ),
                 state=state,
             )
-        agent_providers[agent_name] = provider_instances[provider_name]
+        return provider_instances[provider_name]
 
-    default_provider = provider_instances.get(
-        settings.models.default_provider,
-        _build_from_settings(
-            settings.models.default_provider,
-            timeout_seconds=float(settings.engine.timeouts.llm_call_seconds),
-            max_retries=settings.engine.retries.llm_call_max_retries,
-            cache=cache,
-            max_rate_limit_wait_seconds=float(
-                settings.engine.retries.rate_limit_max_wait_seconds
-            ),
-            state=state,
-        ),
+    for agent_name in settings.models.agents:
+        if agent_name in non_llm_agents:
+            continue
+
+        agent_cfg = settings.models.for_agent(agent_name)
+        provider = instance_for(agent_cfg.provider or settings.models.default_provider)
+        if agent_cfg.fallback_provider is not None:
+            provider = ProviderChain(
+                provider,
+                instance_for(agent_cfg.fallback_provider.provider),
+                agent_cfg.fallback_provider,
+            )
+        agent_providers[agent_name] = provider
+
+    return AgentScopedLLMProvider(
+        agent_providers, instance_for(settings.models.default_provider)
     )
-    return AgentScopedLLMProvider(agent_providers, default_provider)
 
 
 register_provider("openrouter", OpenRouterProvider)

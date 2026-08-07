@@ -48,6 +48,41 @@ Bu sayede retry/rate-limit/log mantığını yeni bir sağlayıcı eklerken **te
 `LLMRateLimitError`) doğrudan yükselir; birden fazla model denenip hepsi başarısız
 olursa `LLMAllModelsExhaustedError` (`__cause__`'da son hatayla) fırlatılır.
 
+### Sağlayıcı değiştiren fallback (`ProviderChain`)
+
+`fallback_models` **aynı sağlayıcı içinde** kalır. Sağlayıcının kendisi tükendiğinde
+(kota, kimlik, kapalı servis) devreye `factory.py::ProviderChain` girer:
+
+```yaml
+editor:
+  provider: groq
+  model: llama-3.3-70b-versatile
+  response_format: json_object
+  fallback_provider:
+    provider: replicate
+    model: meta/meta-llama-3-70b-instruct   # model adları sağlayıcıya ÖZGÜdür
+    max_tokens: 1200
+```
+
+İstek ikincil sağlayıcıya taşınırken model adı ve (verilmişse) token bütçesi yeniden
+hedeflenir; system/user prompt ve `response_format` korunur. İki katmanın ayrı olmasının
+sebebi tam olarak budur: Groq'un `llama-3.3-70b-versatile`'ı Replicate'te geçersiz bir
+addır, dolayısıyla sağlayıcı değişimi bir model listesi girdisi olarak ifade edilemez.
+
+### Yapısal çıktı (`response_format`)
+
+`LLMRequest.response_format="json_object"` sağlayıcının structured output kipini açar.
+Destek durumu:
+
+| Sağlayıcı | Durum |
+|---|---|
+| Groq | Destekler. Desteklemeyen bir modelde 400 dönerse parametre düşürülüp istek tekrarlanır |
+| OpenRouter | Destekler; desteklemeyen modelde sessizce yok sayar |
+| Replicate | **Desteklemez** — metin modellerinin prediction input şemasında böyle bir alan yok. Uyarı loglanır, JSON garantisi prompt seviyesinde kalır |
+
+Bu yüzden JSON bekleyen agent'lar şema talimatını prompt'ta da yazmaya devam eder ve
+`utils/json_llm.py::parse_llm_json`'ın kurtarma yolları korunur.
+
 ### Loglama
 
 Her çağrı için: `run_id`, `agent_name`, `provider`, `model`, `prompt_tokens`,

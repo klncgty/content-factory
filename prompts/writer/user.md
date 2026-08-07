@@ -35,6 +35,11 @@ $key_facts
 
 ## Önceki Deneme Geri Bildirimi (varsa, mutlaka uygula)
 
+Her satır `«metinden alıntı» — sorun. Düzeltme: ne yapılacağı` biçimindedir. Alıntı,
+önceki taslakta **birebir** geçen ve düzeltilmesi gereken yerdir: o yeri metinde bul ve
+yalnızca orayı, söylenen düzeltmeye göre değiştir. Geri bildirimdeki HER satırı uygula —
+birini atlarsan makale aynı gerekçeyle yeniden reddedilir.
+
 $feedback
 
 ## Reddedilen Önceki Taslak

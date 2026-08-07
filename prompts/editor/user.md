@@ -6,10 +6,6 @@ $tone
 
 $writing_rules
 
-## İçerik Kapsamı
-
-$content_scope
-
 ## Yasaklı Kelimeler
 
 $forbidden_words
@@ -18,17 +14,18 @@ $forbidden_words
 
 $forbidden_claims
 
-Not: Bu listelerin birebir geçtiği yerler zaten otomatik olarak yakalanıyor. Senin işin
-**dolaylı/eşanlamlı** ihlalleri bulmak — ör. "mucize" yazmadan mucizevi etki ima etmek,
-ya da kaynak göstermeden klinik/istatistiksel bir sağlık iddiasında bulunmak.
+Not: Bu iki listenin metinde birebir geçtiği yerler kod tarafından zaten arandı ve
+bulunmadı. Bu listeler sana yalnızca **örtük** ihlalleri tanıyabilmen için veriliyor:
+yasaklı kelimeyi yazmadan aynı anlamı ima eden bir cümle (ör. "mucize" demeden mucizevi
+bir etki vaat etmek) ya da kaynak göstermeden klinik/istatistiksel bir sağlık iddiası.
+Listedeki bir ifadenin metinde geçtiğini iddia etme — geçmiyor.
 
 ## Araştırma Notları (doğru kabul edilen tek bilgi kaynağı)
 
 $key_facts
 
-Makaledeki somut/sayısal iddiaları bu listeyle karşılaştır: bir iddia burada YOKSA ve
-genel bilgiyle de doğrulanamıyorsa, muhtemelen uydurmadır — reddet ve hangi cümlenin
-kaynaksız olduğunu `reasons`'da belirt.
+Makaledeki somut/sayısal iddiaları bu listeyle karşılaştır. Bir iddia burada YOKSA ve
+genel bilgiyle de doğrulanamıyorsa, o cümleyi alıntılayarak reddet.
 
 ## Makale
 
@@ -36,13 +33,33 @@ $article_body
 
 ## Görev
 
-Yalnızca şu JSON şemasına uyan bir nesne döndür, başka hiçbir açıklama ekleme:
+Makaleyi incele ve YALNIZCA aşağıdaki JSON şemasına uyan tek bir nesne döndür. Öncesine
+veya sonrasına açıklama, başlık, markdown yazma.
 
 ```json
 {
   "decision": "approved",
-  "reasons": ["gerekçe veya düzeltme talebi (varsa)"]
+  "reasons": []
+}
+```
+
+Reddediyorsan her gerekçe şu üç alanı taşımalıdır:
+
+```json
+{
+  "decision": "rejected",
+  "reasons": [
+    {
+      "alinti": "makaleden birebir kopyalanmış cümle veya cümle parçası",
+      "sorun": "bu alıntının nesi yanlış (Türkçe)",
+      "duzeltme": "yazarın uygulayacağı somut talimat (Türkçe)"
+    }
+  ]
 }
 ```
 
 `decision` yalnızca `"approved"` veya `"rejected"` olabilir.
+
+`alinti` alanı makalede birebir geçmek zorundadır ve kod tarafından metne karşı
+doğrulanır. Doğrulanamayan gerekçe karara katılmaz; alıntısını gösteremediğin bir sorun
+için gerekçe yazma. Gösterebileceğin somut bir sorun yoksa `approved` döndür.
