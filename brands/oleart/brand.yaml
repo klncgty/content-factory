@@ -9,6 +9,8 @@ website: https://oleart.co
 language: tr
 
 content_bounds:
+  # VARSAYILAN sınırlar — `by_content_type` altında karşılığı olmayan her makale için.
+  #
   # 800 -> 700 (04.08.2026). 800'lük taban modeli sürekli "uzatma" moduna sokuyordu:
   # Writer hedefi tutturmak için bölüm sonlarına dolgu paragraflar ekliyor, genişletme
   # turunda ise talimat metne sızabiliyordu (yayından geri alınan makalede altı yerde
@@ -16,6 +18,36 @@ content_bounds:
   # uzunluğuna yakın olduğu için şişirmeye gerek bırakmıyor.
   min_word_count: 700
   max_word_count: 1500
+
+  # İçerik tipine göre sınırlar (07.08.2026). Tek bir global taban yanlış varsayıma
+  # dayanıyordu: her makalenin doğal uzunluğu aynı değil.
+  #
+  # Ölçüm: tarif makalelerinin ilk taslakları 459, 512, 522, 665 kelime çıkarken
+  # açıklayıcı makaleler 805 ve 919 kelimeye doğal olarak ulaştı. 700 tabanı tarifleri
+  # sürekli genişletme + Editor retry döngüsüne sokuyordu — ve asıl zarar buydu: model
+  # tabanı tutturmak için dolgu yazıyordu. Yayınlanan bir tarifin "Malzemeler" bölümünde,
+  # malzeme listesinden sonra zeytinyağının nasıl saklandığını ve kaç derecede
+  # bulanıklaştığını anlatan iki paragraf vardı. Bu, tarif aramalarında okuru kaçıran ve
+  # arama motorlarının "yardımcı olmayan içerik" saydığı klasik dolgu kalıbı.
+  #
+  # `description` alanı Strategist'e verilir: tipi o seçer, sayıları burası belirler
+  # (bkz. agents/strategist.py::_content_type_catalog).
+  by_content_type:
+    recipe:
+      description: >-
+        Belirli bir yemeğin nasıl yapıldığını malzeme listesi ve adımlarla anlatan tarif
+      # 450 tabanı, ölçülen doğal tarif uzunluğunun (459-665) hemen altında: çoğu tarif
+      # ilk taslakta geçer, genişletme turu hiç tetiklenmez. 900 tavanı dolgunun geri
+      # gelmesini engeller — bir tarif 900 kelimeyi aşıyorsa artık tarif değildir.
+      min_word_count: 450
+      max_word_count: 900
+    guide:
+      description: >-
+        Bir konuyu açıklayan, karşılaştıran ya da nasıl yapılacağını öğreten rehber yazı
+      # Varsayılanla aynı: bu tipteki iki makale 805 ve 919 kelimeye doğal olarak ulaştı,
+      # değiştirmeyi gerektiren bir ölçüm yok.
+      min_word_count: 700
+      max_word_count: 1500
 
 forbidden_words:
   - "mucize"

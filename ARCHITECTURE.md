@@ -696,6 +696,20 @@ sequenceDiagram
   okunamayan bir inceleme makale hakkında bir yargı değildir, bu yüzden Orchestrator
   Writer'ı yeniden çalıştırmaz, aynı metinle Editor'ü tekrar dener. Aksi hâlde sağlam bir
   taslak boşuna yeniden yazdırılıp deneme hakkı yanıyordu.
+- **Uzunluk sınırları içerik tipine bağlıdır** (`brand.yaml: content_bounds.by_content_type`).
+  Tek bir global taban (700) her makaleye uygulanıyordu ve tarifler bunu doğal olarak
+  tutturamıyordu (ölçülen ilk taslaklar: 459, 512, 522, 665; açıklayıcı makaleler ise 805
+  ve 919'a kendiliğinden ulaşıyordu). Asıl zarar pahalı retry döngüsü değil KALİTE KAYBIYDI:
+  model tabanı tutturmak için dolgu yazıyordu — yayınlanan bir tarifin "Malzemeler"
+  bölümünde, malzeme listesinden sonra zeytinyağının nasıl saklandığını ve kaç derecede
+  bulanıklaştığını anlatan iki paragraf vardı. Tarif aramalarında okuru kaçıran ve arama
+  motorlarının "yardımcı olmayan içerik" saydığı klasik kalıp.
+
+  İş bölümü, Editor'deki ayrımın aynısı: **tipi LLM seçer, sayıları config belirler.**
+  Strategist makalenin tipini (`recipe`/`guide`) seçer; hedef uzunluk, taban/tavan ve
+  bölüm sayısı aralığı seçimden SONRA kod tarafından `brand.yaml`'dan türetilir — model
+  kendi barajını koyamaz. Tanınmayan bir tip markanın varsayılan sınırlarına düşer ve
+  loglanır. Tip adları ortak prompt'ta değil marka config'inde yaşar (marka bağımsızlığı).
 - Duplicate/keyword cannibalization kontrolü (SQLite `keywords` tablosu, `UNIQUE` benzeri
   mantık).
 - LinkerAgent'ın eski makalelere dokunuşu yalnızca yapılandırılmış frontmatter alanıyla

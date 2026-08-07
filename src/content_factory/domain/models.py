@@ -106,6 +106,11 @@ class Brief(DomainModel):
     topic: Topic
     title: str
     target_keyword: str
+    content_type: str | None = None
+    """Makalenin içerik tipi (`brand.yaml: content_bounds.by_content_type` anahtarı,
+    ör. `recipe`/`guide`). Uzunluk bandını bu belirler — bir tarifin doğal uzunluğu bir
+    rehberinkinden kısadır. Strategist doldurur; tanınmayan/boş bir değer markanın
+    varsayılan sınırlarına düşer (bkz. `ContentBounds.for_content_type`)."""
     secondary_keywords: list[str] = Field(default_factory=list)
     audience: str | None = None
     tone: str | None = None
@@ -190,6 +195,11 @@ class Article(DomainModel):
     title: str
     description: str = ""
     category: str | None = None
+    content_type: str | None = None
+    """`Brief.content_type`'ın taşınmış hâli — Writer doldurur, Editor uzunluk sınırlarını
+    buna göre çözer. Frontmatter'a YAZILMAZ: `PublisherAgent` yayın sözleşmesindeki alanları
+    tek tek kurar (bkz. ARCHITECTURE.md §6), bu alan yalnızca pipeline içi bir kararın
+    taşıyıcısıdır."""
     target_keyword: str | None = None
     secondary_keywords: list[str] = Field(default_factory=list)
     body_markdown: str = ""

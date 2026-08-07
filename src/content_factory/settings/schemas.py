@@ -126,9 +126,49 @@ class ModelsConfig(YamlModel):
 # --------------------------------------------------------------------------- brands/{b}/brand.yaml
 
 
+class WordCountBounds(YamlModel):
+    """Tek bir içerik tipinin uzunluk bandı."""
+
+    min_word_count: int
+    max_word_count: int
+    description: str = ""
+    """Strategist'e bu tipin ne olduğunu anlatan bir cümle. Tip sözlüğü markaya ait
+    olduğu için açıklaması da config'de yaşar — ortak prompt hiçbir tip adını bilmez
+    (bkz. `prompts/strategist/user.md: $content_types`)."""
+
+
 class ContentBounds(YamlModel):
+    """Makale uzunluk sınırları — Writer üretirken, Editor deterministik olarak denetlerken
+    aynı kaynağı okur.
+
+    `by_content_type` ile sınırlar İÇERİK TİPİNE göre değişebilir. Neden gerekli
+    (07.08.2026): tek bir global taban (700) bütün makalelere uygulanıyordu ve tarifler
+    bunu doğal olarak tutturamıyordu (ölçülen ilk taslaklar: 459, 512, 522, 665). Sonuç
+    yalnızca pahalı bir retry döngüsü değil, KALİTE KAYBIYDI: model tabanı tutturmak için
+    dolgu yazıyordu — yayınlanan bir tarifin "Malzemeler" bölümünde malzeme listesinden
+    sonra zeytinyağının nasıl saklanacağını ve kaç derecede bulanıklaştığını anlatan iki
+    paragraf vardı. Bir tarifin doğal uzunluğu bir rehberinkinden kısadır; tabanı zorlamak
+    makaleyi iyileştirmiyor, sulandırıyordu."""
+
     min_word_count: int = 800
     max_word_count: int = 1500
+    by_content_type: dict[str, WordCountBounds] = Field(default_factory=dict)
+
+    def for_content_type(self, content_type: str | None) -> WordCountBounds:
+        """Verilen tipin bandı; tip yoksa/tanınmıyorsa yukarıdaki varsayılan sınırlar.
+
+        Tanınmayan bir tipin sessizce varsayılana düşmesi bilinçlidir: Strategist config'de
+        olmayan bir tip uydurursa makale yine de üretilebilmelidir. Düşüş `StrategistAgent`
+        tarafından loglanır."""
+        known = self.by_content_type.get(content_type or "")
+        if known is not None:
+            return known
+        return WordCountBounds(
+            min_word_count=self.min_word_count, max_word_count=self.max_word_count
+        )
+
+    def known_content_types(self) -> tuple[str, ...]:
+        return tuple(self.by_content_type)
 
 
 class BrandConfig(YamlModel):

@@ -19,12 +19,27 @@ $target_audience
 
 $writing_rules_summary
 
-## Uzunluk ve Yapı Kısıtı
+## İçerik Tipi ve Uzunluk Kısıtı
 
-Makale $min_word_count-$max_word_count kelime olacak (Editor bunu deterministik denetler).
-Yazar her bölümü ortalama ~180 kelime yazıyor; bu yüzden outline **en az $min_sections
-bölüm** içermeli. Daha az bölümlü bir outline, yazarın alt sınırın altında kalmasına ve
-makalenin reddedilmesine yol açıyor. `target_word_count` alanına $target_word_count yaz.
+Önce bu konunun hangi içerik tipi olduğuna karar ver. Uzunluk ve bölüm sayısı kısıtı
+seçtiğin tipe göre değişir:
+
+$content_types
+
+Tiplerden hiçbiri uymuyorsa `content_type` alanını boş bırak; o durumda makale
+$default_min_word_count-$default_max_word_count kelime olur.
+
+Outline'ı **seçtiğin tipin satırına göre** kur. Yazar her bölümü ortalama ~180 kelime
+yazıyor, yani bölüm sayısı makalenin uzunluğunu belirleyen asıl kaldıraç:
+
+- Bölüm sayısı satırdaki **aralığın içinde** kalmalı. Aralığın altı, yazarın alt sınırın
+  altında kalmasına ve makalenin reddedilmesine yol açar; üstü ise üst sınırı aşırıp
+  makaleyi yine reddettirir.
+- Aralığın üst ucunu hedef sanma. Anlatacak şeyi olan bölümler yaz; her bölüm okura yeni
+  bir şey vermeli. Dolgu bölüm eklemek makaleyi iyileştirmez.
+
+Doğru tipi seçmek önemli: bir tarifi rehber sanıp uzun bir outline kurarsan yazar
+boşluğu dolgu paragraflarla doldurur.
 
 ## Görev
 
@@ -34,13 +49,16 @@ Yalnızca şu JSON şemasına uyan bir nesne döndür, başka hiçbir açıklama
 {
   "title": "makale başlığı",
   "target_keyword": "hedef anahtar kelime",
+  "content_type": "yukarıdaki listeden bir tip adı, ya da boş",
   "secondary_keywords": ["ikincil kelime 1", "ikincil kelime 2"],
   "audience": "hedef kitle özeti",
   "tone": "ton özeti",
-  "target_word_count": 1000,
   "outline": [
     {"heading": "Bölüm başlığı", "summary": "bu bölümde ele alınacakların özeti"}
   ],
   "suggested_internal_links": ["ilgili olabilecek konu/ürün anahtar kelimesi"]
 }
 ```
+
+`content_type` yalnızca yukarıdaki listede geçen adlardan biri olabilir; yeni bir tip adı
+uydurma.

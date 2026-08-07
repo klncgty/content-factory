@@ -20,13 +20,17 @@ _SAMPLE_MARKDOWN = "# Zeytinyağı Donar mı?\n\nİçerik burada birkaç kelime.
 
 
 def _writer_input(
-    feedback: str | None = None, previous_draft: str | None = None
+    feedback: str | None = None,
+    previous_draft: str | None = None,
+    *,
+    content_type: str | None = None,
 ) -> WriterInput:
     topic = Topic(brand="oleart", title="Zeytinyağı Donar mı?", category="olive_and_oil")
     brief = Brief(
         topic=topic,
         title="Zeytinyağı Donar mı?",
         target_keyword="zeytinyağı donar mı",
+        content_type=content_type,
         secondary_keywords=["zeytinyağı saklama"],
         target_word_count=900,
         outline=[OutlineSection(heading="Neden Donar?", summary="bilimsel açıklama")],
@@ -198,3 +202,50 @@ def test_target_length_is_not_inflated_above_brief(agent_context: AgentContext) 
 
     prompt = stub.requests[0].messages[0].content
     assert "yaklaşık 900 kelime" in prompt  # brief.target_word_count = 900
+
+
+def test_content_type_is_carried_to_the_article(agent_context: AgentContext) -> None:
+    """Editor'ün brief'e erişimi yok; uzunluk sınırlarını `article.content_type`
+    üzerinden çözüyor. Alan taşınmazsa iki taraf sessizce farklı bant kullanır."""
+    agent_context.llm = StubLLMProvider(responses=[_SAMPLE_MARKDOWN])
+
+    article = WriterAgent(agent_context)(_writer_input(content_type="recipe"))
+
+    assert article.content_type == "recipe"
+
+
+def test_expansion_floor_follows_the_content_type(agent_context: AgentContext) -> None:
+    """500 kelimelik bir tarif taban 450'yi zaten geçtiği için genişletme turu HİÇ
+    tetiklenmez — tek LLM çağrısı yeterlidir. Bu, 07.08.2026'da her tarifte iki
+    gereksiz tur döndüren davranışın regresyon testi."""
+    draft = "# Tarif\n\n" + " ".join(["zeytinyağı"] * 500)
+    stub = StubLLMProvider(responses=[draft])
+    agent_context.llm = stub
+
+    article = WriterAgent(agent_context)(_writer_input(content_type="recipe"))
+
+    assert len(stub.requests) == 1
+    assert article.body_markdown == draft
+
+
+def test_same_draft_triggers_expansion_for_a_guide(agent_context: AgentContext) -> None:
+    """Aynı 500 kelimelik taslak rehber tipinde taban 700'ün altında kalır ve
+    genişletme turları çalışır."""
+    draft = "# Rehber\n\n" + " ".join(["zeytinyağı"] * 500)
+    stub = StubLLMProvider(responses=[draft, draft, draft])
+    agent_context.llm = stub
+
+    WriterAgent(agent_context)(_writer_input(content_type="guide"))
+
+    assert len(stub.requests) > 1
+
+
+def test_recipe_bounds_are_sent_to_the_prompt(agent_context: AgentContext) -> None:
+    stub = StubLLMProvider(responses=["# T\n\n" + " ".join(["kelime"] * 500)])
+    agent_context.llm = stub
+
+    WriterAgent(agent_context)(_writer_input(content_type="recipe"))
+
+    prompt = stub.requests[0].messages[0].content
+    assert "450" in prompt
+    assert "900" in prompt

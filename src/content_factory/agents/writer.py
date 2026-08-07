@@ -17,6 +17,7 @@ from __future__ import annotations
 from content_factory.agents.base import BaseAgent
 from content_factory.domain.exceptions import AgentOutputParsingError
 from content_factory.domain.models import Article, ArticleStatus, Brief, ResearchNotes, WriterInput
+from content_factory.settings.schemas import WordCountBounds
 
 
 class WriterAgent(BaseAgent[WriterInput, Article]):
@@ -73,6 +74,8 @@ class WriterAgent(BaseAgent[WriterInput, Article]):
             brand=self.context.brand,
             title=brief.title,
             category=brief.topic.category,
+            # Editor uzunluk sınırlarını buradan çözer — brief'e erişimi yok.
+            content_type=brief.content_type,
             target_keyword=brief.target_keyword,
             secondary_keywords=brief.secondary_keywords,
             body_markdown=body_markdown,
@@ -95,7 +98,7 @@ class WriterAgent(BaseAgent[WriterInput, Article]):
         knowledge = self.require_knowledge()
         # Editor kelime sayısını deterministik olarak denetliyor (editor.py::_check_word_count);
         # aynı sınırları yazma anında da vererek gereksiz reddet-yeniden yaz döngüsünü azaltıyoruz.
-        bounds = self.context.settings.brand.content_bounds
+        bounds = self._bounds_for(brief)
 
         user_message = self.load_prompts().render_user(
             tone=knowledge.get_tone(),
@@ -124,8 +127,9 @@ class WriterAgent(BaseAgent[WriterInput, Article]):
         bir geri bildirim olarak verir — user prompt'un "önceki taslak varsa revize et"
         yolu devreye girer. Bir tur taslağı UZATMADIYSA (boş/daha kısa yanıt) eldeki en
         uzun taslak korunur; kötü bir genişletme, iyi bir taslağı asla ezmez."""
-        floor = self._word_floor(self.context.settings.brand.content_bounds.min_word_count)
-        max_words = self.context.settings.brand.content_bounds.max_word_count
+        bounds = self._bounds_for(brief)
+        floor = self._word_floor(bounds.min_word_count)
+        max_words = bounds.max_word_count
 
         for attempt in range(1, self._MAX_EXPANSION_PASSES + 1):
             word_count = len(body_markdown.split())
@@ -167,6 +171,12 @@ class WriterAgent(BaseAgent[WriterInput, Article]):
                 "karar Editor'e bırakılıyor"
             )
         return body_markdown
+
+    def _bounds_for(self, brief: Brief) -> WordCountBounds:
+        """Bu makalenin uzunluk bandı — içerik tipine göre değişir (`brand.yaml:
+        content_bounds.by_content_type`). Editor aynı çözümlemeyi `article.content_type`
+        üzerinden yapar; iki taraf ayrı ayrı hesaplarsa sessizce birbirinden kayar."""
+        return self.context.settings.brand.content_bounds.for_content_type(brief.content_type)
 
     @classmethod
     def _word_floor(cls, min_word_count: int) -> int:

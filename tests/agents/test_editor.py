@@ -449,3 +449,47 @@ def test_legitimate_sentences_are_not_flagged_as_leftovers(agent_context: AgentC
     report = agent(EditorInput(article=_article(body_markdown=body)))
 
     assert report.decision is QADecision.APPROVED
+
+
+def test_word_count_bounds_follow_the_content_type(agent_context: AgentContext) -> None:
+    """500 kelimelik bir TARİF geçer (taban 450), aynı uzunluktaki bir REHBER geçmez
+    (taban 700). Tek bir global taban, tarifleri doğal uzunluklarının üstüne çıkmaya
+    zorlayıp dolgu ürettiriyordu (07.08.2026)."""
+    agent_context.llm = StubLLMProvider(responses=[_IN_SCOPE, _APPROVED])
+    recipe = _article(body_markdown=_body(500), content_type="recipe")
+
+    report = EditorAgent(agent_context)(EditorInput(article=recipe))
+
+    assert report.decision is QADecision.APPROVED
+
+
+def test_guide_of_the_same_length_is_rejected_as_too_short(agent_context: AgentContext) -> None:
+    agent_context.llm = StubLLMProvider(responses=[_IN_SCOPE, _APPROVED])
+    guide = _article(body_markdown=_body(500), content_type="guide")
+
+    report = EditorAgent(agent_context)(EditorInput(article=guide))
+
+    assert report.decision is QADecision.REJECTED
+    assert "en az 700" in report.reasons[0]
+
+
+def test_recipe_ceiling_is_lower_than_the_default(agent_context: AgentContext) -> None:
+    """Tavan da tipe bağlı: 1000 kelimelik bir tarif artık tarif değildir (tavan 900),
+    aynı uzunluk varsayılan bantta (1500) sorunsuz geçer."""
+    agent_context.llm = StubLLMProvider(responses=[_IN_SCOPE, _APPROVED])
+    long_recipe = _article(body_markdown=_body(1000), content_type="recipe")
+
+    report = EditorAgent(agent_context)(EditorInput(article=long_recipe))
+
+    assert report.decision is QADecision.REJECTED
+    assert "en fazla 900" in report.reasons[0]
+
+
+def test_unknown_content_type_uses_brand_defaults(agent_context: AgentContext) -> None:
+    agent_context.llm = StubLLMProvider(responses=[_IN_SCOPE, _APPROVED])
+    article = _article(body_markdown=_body(500), content_type="podcast")
+
+    report = EditorAgent(agent_context)(EditorInput(article=article))
+
+    assert report.decision is QADecision.REJECTED
+    assert "en az 700" in report.reasons[0]

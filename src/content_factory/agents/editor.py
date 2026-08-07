@@ -182,7 +182,11 @@ class EditorAgent(BaseAgent[EditorInput, QAReport]):
         ]
 
     def _check_word_count(self, article: Article) -> list[str]:
-        bounds = self.context.settings.brand.content_bounds
+        """Sınırlar makalenin İÇERİK TİPİNE göre çözülür (`brand.yaml:
+        content_bounds.by_content_type`) — Writer da aynı çözümlemeyi `brief.content_type`
+        üzerinden yapar. Tek bir global taban, tarifleri doğal uzunluklarının üstüne
+        çıkmaya zorluyor ve dolgu ürettiriyordu (bkz. `ContentBounds`)."""
+        bounds = self.context.settings.brand.content_bounds.for_content_type(article.content_type)
         word_count = len(article.body_markdown.split())
         if word_count < bounds.min_word_count:
             return [
