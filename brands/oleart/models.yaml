@@ -120,6 +120,17 @@ agents:
       # turu olduğu için burada bütçe cömert tutulur.
       max_tokens: 1200
 
+  image_prompt:
+    # Görsel sahnesini yazan metin modeli. Çıktı İngilizce ve çok kısa (~30 kelime),
+    # bu yüzden ucuz bir model yeterli; JSON döndürdüğü için reasoning YAPMAYAN bir
+    # sohbet modeli seçilir (gpt-oss küçük bütçeyi düşünmede tüketip boş dönüyordu).
+    provider: groq
+    model: llama-3.3-70b-versatile
+    fallback_models: [llama-3.1-8b-instant]
+    temperature: 0.3
+    max_tokens: 300
+    response_format: json_object
+
   scope_guard:
     provider: groq
     # Ucuz/hızlı sınıflandırma yeterli.

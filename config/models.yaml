@@ -96,6 +96,16 @@ agents:
     # brands/oleart/models.yaml): birincil sağlayıcının kotası dolduğunda istek,
     # o sağlayıcıya ait model adıyla yeniden hedeflenip oraya taşınır.
 
+  image_prompt:
+    # ImageGeneratorAgent'ın SAHNE metnini yazan metin modeli — görseli üreten modelden
+    # ayrıdır (yukarıdaki `image_generator` bir ImageProvider'ı yapılandırır, oraya bir
+    # metin modeli yazılamaz). İş küçük: Türkçe başlığı İngilizce bir fotoğraf sahnesine
+    # çevirmek, ~30 kelime çıktı.
+    model: openai/gpt-oss-20b:free
+    temperature: 0.3
+    max_tokens: 300
+    response_format: json_object
+
   scope_guard:
     # ScopeGuard.post_check burayı kullanır (bkz. guards/scope_guard.py). EditorAgent'ın
     # kendi modelinden bağımsız, ucuz/hızlı bir sınıflandırma modeli yeterlidir.
