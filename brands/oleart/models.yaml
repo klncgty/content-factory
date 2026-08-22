@@ -9,37 +9,80 @@
 # Bu dosya config/models.yaml'ı SİLMEZ, üzerine deep-merge edilir (bkz.
 # settings/loader.py::Settings.load) — yalnızca aşağıda yazan alanlar değişir.
 #
-# Groq ücretsiz kademesinde sınır MODEL BAŞINA dakikalık token'dır (TPM) ve tek bir
-# istek `prompt + max_tokens` kadar token rezerve eder; tavanı aşan istek 413 döner
-# (ölçülen: llama-3.3-70b 12k, gpt-oss-120b/20b 8k, qwen3.6-27b 8k, llama-3.1-8b 6k).
-# Bu yüzden aşağıda üç şey yapılır:
-#   1. max_tokens gerçek çıktı boyutuna göre ayarlanır (rezervasyonu küçültür),
-#   2. her role FARKLI bir modelden fallback verilir — bir modelin dakikalık kotası
-#      dolduğunda run ölmez, sıradaki modele geçer (bkz. providers/llm/base.py),
-#   3. JSON döndüren roller için fallback de reasoning YAPMAYAN bir model seçilir:
-#      gpt-oss gibi modeller küçük max_tokens ile bütçeyi düşünmede tüketip boş içerik
-#      döndürüyor (finish_reason=length).
+# ---------------------------------------------------------------------------------
+# 22.08.2026 — LLAMA MODELLERİ GROQ'TAN KALDIRILDI, TÜM ROLLER YENİDEN SEÇİLDİ.
+#
+# `llama-3.3-70b-versatile` ve `llama-3.1-8b-instant` artık Groq'ta YOK: her ikisi de
+# 404 `model_not_found` döndürüyor (doğrulandı: GET /openai/v1/models bu adları
+# listelemiyor). Bu iki ad dokuz rolün sekizinde asıl model ya da fallback olarak
+# geçtiği için pipeline strategist adımında 404 ile duruyordu.
+#
+# ÖNEMLİ: models.yaml'a model adı yazmadan önce hesabın gerçekten neye eriştiğini
+# doğrulayın — model listeleri haber verilmeden değişiyor:
+#   curl -s https://api.groq.com/openai/v1/models -H "Authorization: Bearer $GROQ_API_KEY"
+#
+# Bu tarihte ölçülen kullanılabilir havuz ve dakikalık token tavanları (TPM):
+#   openai/gpt-oss-120b            8.000 TPM   reasoning; düşünme AYRI alanda
+#   openai/gpt-oss-20b             8.000 TPM   reasoning; düşünme AYRI alanda
+#   openai/gpt-oss-safeguard-20b   8.000 TPM   politika sınıflandırma odaklı
+#   qwen/qwen3.6-27b               8.000 TPM   reasoning; JSON kipinde kapatılır (aşağıda)
+#   groq/compound-mini            70.000 TPM   ajanik; düşünme üretmez
+#   groq/compound                 70.000 TPM   ajanik; yavaş (~10 sn) ve çok token yakıyor
+#
+# Eski profildeki "her role farklı bir TPM kovası" tasarımı korunuyor: bir model
+# dakikalık kotasını doldurduğunda run ölmez, sıradaki modele geçer
+# (bkz. providers/llm/base.py). Kovalar artık 12k/6k değil, tek tip 8k.
+#
+# İKİ ÖLÇÜLMÜŞ KISIT, ROL DAĞILIMINI BELİRLİYOR:
+#
+#   1. KÜÇÜK BÜTÇELİ JSON ROLLERİNDE gpt-oss KULLANILAMAZ. gpt-oss düşünmeyi
+#      max_tokens'tan harcıyor; 300 token bütçeyle image_prompt isteği 400
+#      `json_validate_failed` ile düştü (düşünmeye harcayıp JSON'a sıra gelmedi).
+#      Aynı istek qwen3.6-27b'de 43 token, compound-mini'de 288 token ile başarılı.
+#      => 300 token'lık roller (image_prompt, scope_guard) qwen + compound-mini.
+#
+#   2. qwen JSON KİPİNDE DÜŞÜNME KAPALI ÇALIŞIR. `response_format: json_object` ile
+#      düşünme açıkken istek HER SEFERİNDE 400 `json_validate_failed` alıyor (700 ve
+#      2000 max_tokens'ta dört deneme, dördü de başarısız). Sağlayıcı bunu artık
+#      kendisi hallediyor: JSON isteyen qwen çağrılarına `reasoning_effort: "none"`
+#      ekleniyor (bkz. providers/llm/groq.py::INLINE_REASONING_MODEL_PREFIXES).
+#      BUNUN CONFIG'E YANSIMASI: qwen'in asıl model YA DA fallback olduğu her role
+#      `response_format: json_object` yazılmalıdır. Yazılmazsa (varsayılan `text`)
+#      düşünme açık kalır ve ölçümde qwen 1200 token bütçeyi düşünmede tüketip BOŞ
+#      içerik döndürdü (finish_reason=length) — seo_optimizer bu yüzden düşmüştü.
+#      Bu rollerin prompt'ları zaten JSON şeması yazıyor; Groq'un JSON kipi için
+#      şart koştuğu "JSON" sözcüğü de prompt'larda mevcut.
+#
 # Ayrıca editor bilinçli olarak writer'dan farklı bir model ailesindedir
 # (ARCHITECTURE.md §4 "farklı bir göz").
+# ---------------------------------------------------------------------------------
 
 agents:
   topic_scout:
     provider: groq
-    model: llama-3.3-70b-versatile
-    fallback_models: [llama-3.1-8b-instant]
+    model: openai/gpt-oss-20b
+    # 70k TPM'lik kova emniyet ağı: 8k'lık kovalar dolduğunda run buraya düşer.
+    fallback_models: [groq/compound-mini]
     max_tokens: 1500          # ölçülen çıktı ~600 token
 
   research:
     provider: groq
     model: openai/gpt-oss-20b
-    fallback_models: [llama-3.3-70b-versatile]
+    fallback_models: [qwen/qwen3.6-27b]
     max_tokens: 2500          # prompt ~5.2k; reasoning payı dahil 8k tavanına sığmalı
+    # qwen'e düşüldüğünde ŞART (aşağıdaki "qwen + JSON" notu): yapısal çıktı açık
+    # olmadan qwen düşünmeyi bütçeden harcayıp boş içerik döndürüyor.
+    response_format: json_object
 
   strategist:
     provider: groq
     model: openai/gpt-oss-20b
-    fallback_models: [llama-3.3-70b-versatile]
+    # Eski fallback `llama-3.3-70b-versatile`'dı ve 404 verip run'ı öldüren yol buydu.
+    # qwen ÖLÇÜLDÜ: aynı strateji isteğini 929 token'da, düzgün Türkçe JSON ile
+    # karşılıyor ve gpt-oss'tan ayrı bir TPM kovası kullanıyor.
+    fallback_models: [qwen/qwen3.6-27b]
     max_tokens: 2500          # ölçülen çıktı ~570 + reasoning payı
+    response_format: json_object
 
   writer:
     # Replicate: Groq'un dakikalık token tavanı (gpt-oss-120b'de 8k) writer'ın tek
@@ -64,16 +107,18 @@ agents:
 
   seo_optimizer:
     provider: groq
-    # JSON döndüren rol -> her iki model de reasoning yapmayan sohbet modeli.
-    model: llama-3.3-70b-versatile
-    fallback_models: [llama-3.1-8b-instant]
+    # JSON döndüren rol. qwen JSON kipinde düşünmeden çalışıyor (yukarıdaki kısıt 2),
+    # bu yüzden bütçenin tamamı çıktıya gidiyor.
+    model: qwen/qwen3.6-27b
+    fallback_models: [openai/gpt-oss-20b]
     max_tokens: 1200
+    response_format: json_object
 
   linker:
     # LinkerAgent LLM ÇAĞIRMAZ (StateStore anahtar kelime örtüşmesi kullanır);
     # bu giriş yalnızca config bütünlüğü için durur.
     provider: groq
-    model: llama-3.1-8b-instant
+    model: openai/gpt-oss-20b
     fallback_models: []
 
   editor:
@@ -91,11 +136,14 @@ agents:
     # kaldırıldı, max_tokens 1800'den 700'e indi. Yine de tavana takılma ihtimaline karşı
     # 8b'ye düşmek yerine doğrudan Replicate'e geçiliyor (aşağıdaki fallback_provider).
     provider: groq
-    # "Writer'dan farklı göz" tasarımı korunuyor: writer gpt-oss ailesi, editor llama.
-    model: llama-3.3-70b-versatile
-    # AYNI sağlayıcı içindeki fallback bilinçli olarak BOŞ: llama-3.1-8b-instant'ın 6000
-    # TPM tavanı bu prompt için dar ve 413 üretiyordu. Sağlayıcı tükendiğinde zincir
-    # doğrudan Replicate'e geçer.
+    # "Writer'dan farklı göz" tasarımı korunuyor: writer gpt-oss ailesi, editor qwen.
+    # (22.08.2026'ya kadar bu rol llama-3.3-70b'ydi; model kaldırılınca aynı tasarım
+    # kısıtını karşılayan tek aday qwen kaldı — ölçüldü: 700 token bütçeyle 186 token'da
+    # şemaya uygun Türkçe JSON, düşünme kapalı.)
+    model: qwen/qwen3.6-27b
+    # AYNI sağlayıcı içindeki fallback bilinçli olarak BOŞ: kalan Groq adaylarının hepsi
+    # gpt-oss ailesinden ve oraya düşmek "farklı göz" tasarımını bozar. Sağlayıcı
+    # tükendiğinde zincir doğrudan Replicate'e geçer.
     fallback_models: []
     # Yapısal çıktı — bu ajanın JSON döndürmesi bir tercih değil, geçidin ön koşulu.
     response_format: json_object
@@ -121,19 +169,23 @@ agents:
       max_tokens: 1200
 
   image_prompt:
-    # Görsel sahnesini yazan metin modeli. Çıktı İngilizce ve çok kısa (~30 kelime),
-    # bu yüzden ucuz bir model yeterli; JSON döndürdüğü için reasoning YAPMAYAN bir
-    # sohbet modeli seçilir (gpt-oss küçük bütçeyi düşünmede tüketip boş dönüyordu).
+    # Görsel sahnesini yazan metin modeli. Çıktı İngilizce ve çok kısa (~30 kelime).
+    # 300 token bütçe gpt-oss'a YETMİYOR (yukarıdaki kısıt 1): düşünmede tükenip
+    # 400 `json_validate_failed` veriyor. qwen aynı isteği 43 token'da bitiriyor.
     provider: groq
-    model: llama-3.3-70b-versatile
-    fallback_models: [llama-3.1-8b-instant]
+    model: qwen/qwen3.6-27b
+    fallback_models: [groq/compound-mini]
     temperature: 0.3
     max_tokens: 300
     response_format: json_object
 
   scope_guard:
+    # ScopeGuard `response_format: json_object`'i KODDA sabitliyor
+    # (guards/scope_guard.py) — buraya yazılan model JSON kipini desteklemek ZORUNDA.
+    # image_prompt ile aynı 300 token kısıtı geçerli.
     provider: groq
-    # Ucuz/hızlı sınıflandırma yeterli.
-    model: llama-3.1-8b-instant
-    fallback_models: [llama-3.3-70b-versatile]
+    model: qwen/qwen3.6-27b
+    fallback_models: [groq/compound-mini]
     max_tokens: 300
+    # Kodda zaten sabit; config'te de yazılı olması qwen kısıtını gözden kaçırılmaz kılar.
+    response_format: json_object

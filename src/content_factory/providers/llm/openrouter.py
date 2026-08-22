@@ -20,6 +20,7 @@ from content_factory.providers.llm.exceptions import (
     LLMAuthenticationError,
     LLMInsufficientCreditError,
     LLMInvalidRequestError,
+    LLMModelNotFoundError,
     LLMProviderUnavailableError,
     LLMRateLimitError,
     LLMTimeoutError,
@@ -228,7 +229,12 @@ class OpenRouterProvider(BaseLLMProvider):
             raise LLMRateLimitError(
                 f"OpenRouter rate limit (model={model})", retry_after=retry_after
             )
-        if status in (400, 404, 422):
+        if status == 404:
+            # Yalnızca bu model yok — sıradaki fallback denenebilir.
+            raise LLMModelNotFoundError(
+                f"OpenRouter'da model bulunamadı ({status}, model={model}): {response.text}"
+            )
+        if status in (400, 422):
             raise LLMInvalidRequestError(
                 f"Geçersiz istek ({status}, model={model}): {response.text}"
             )

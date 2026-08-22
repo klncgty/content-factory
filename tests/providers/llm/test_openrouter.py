@@ -9,6 +9,7 @@ from content_factory.providers.llm.exceptions import (
     LLMAuthenticationError,
     LLMInsufficientCreditError,
     LLMInvalidRequestError,
+    LLMModelNotFoundError,
     LLMProviderUnavailableError,
     LLMRateLimitError,
     LLMTimeoutError,
@@ -166,15 +167,42 @@ def test_generate_402_does_not_try_fallback_models() -> None:
     provider.close()
 
 
-def test_generate_404_raises_invalid_request_error() -> None:
-    """Var olmayan bir model adı — retry/fallback değil, net bir yapılandırma hatası."""
+def test_generate_404_raises_model_not_found_error() -> None:
+    """Var olmayan bir model adı — retry EDİLMEZ (eksik model geri gelmez) ama fallback
+    zinciri denenir: sağlayıcılar modelleri hizmetten kaldırıyor ve config'de kalan ölü
+    bir ad, çalışan bir fallback varken tüm run'ı öldürmemeli."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(404, json={"error": "No endpoints found for model"})
 
     provider = _provider(handler)
-    with pytest.raises(LLMInvalidRequestError):
+    with pytest.raises(LLMModelNotFoundError):
         provider.generate(_request(), agent_name="writer", run_id="run-1")
+    provider.close()
+
+
+def test_generate_404_falls_back_to_the_next_model() -> None:
+    """Ölü model elenir, sıradaki model isteği karşılar."""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        model = _json.loads(request.content)["model"]
+        seen.append(model)
+        if model == "kaldirilmis/model":
+            return httpx.Response(404, json={"error": "No endpoints found for model"})
+        return _success_response(model)
+
+    provider = _provider(handler)
+    response = provider.generate(
+        _request(model="kaldirilmis/model", fallback_models=["calisan/model"]),
+        agent_name="writer",
+        run_id="run-1",
+    )
+
+    assert response.content == "merhaba!"
+    assert seen == ["kaldirilmis/model", "calisan/model"]
     provider.close()
 
 

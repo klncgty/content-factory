@@ -82,7 +82,7 @@ class FallbackProviderConfig(YamlModel):
     sağlayıcı (bkz. `providers/llm/factory.py::ProviderChain`).
 
     `fallback_models` neden yetmiyor: o liste AYNI sağlayıcı içinde denenir ve model
-    adları sağlayıcıya özgüdür (Groq'ta `llama-3.3-70b-versatile`, Replicate'te
+    adları sağlayıcıya özgüdür (Groq'ta `qwen/qwen3.6-27b`, Replicate'te
     `meta/meta-llama-3-70b-instruct`). Sağlayıcı değiştiğinde model adının da değişmesi
     gerektiği için ikincil sağlayıcı kendi model bilgisini taşır."""
 

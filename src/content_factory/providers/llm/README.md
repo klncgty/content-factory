@@ -56,7 +56,7 @@ olursa `LLMAllModelsExhaustedError` (`__cause__`'da son hatayla) fırlatılır.
 ```yaml
 editor:
   provider: groq
-  model: llama-3.3-70b-versatile
+  model: qwen/qwen3.6-27b
   response_format: json_object
   fallback_provider:
     provider: replicate
@@ -66,7 +66,7 @@ editor:
 
 İstek ikincil sağlayıcıya taşınırken model adı ve (verilmişse) token bütçesi yeniden
 hedeflenir; system/user prompt ve `response_format` korunur. İki katmanın ayrı olmasının
-sebebi tam olarak budur: Groq'un `llama-3.3-70b-versatile`'ı Replicate'te geçersiz bir
+sebebi tam olarak budur: Groq'un `qwen/qwen3.6-27b`'si Replicate'te geçersiz bir
 addır, dolayısıyla sağlayıcı değişimi bir model listesi girdisi olarak ifade edilemez.
 
 ### Yapısal çıktı (`response_format`)
