@@ -6,6 +6,8 @@
   bir sonraki `fallback_models` girdisine geçilir.
 - `LLMAuthenticationError` / `LLMInvalidRequestError` / `LLMInsufficientCreditError` →
   sistemsel hata, retry veya fallback denemenin faydası yoktur, hemen yükseltilir (re-raise).
+- `LLMModelNotFoundError` → yalnızca O MODEL yok; retry edilmez ama bir sonraki
+  `fallback_models` girdisine geçilir.
 """
 
 from __future__ import annotations
@@ -20,8 +22,23 @@ class LLMAuthenticationError(LLMError):
 
 
 class LLMInvalidRequestError(LLMError):
-    """400/404/422 — istek sağlayıcı tarafından reddedildi (bozuk gövde veya var olmayan
-    model). Retry/fallback faydasız."""
+    """400/422 — istek sağlayıcı tarafından reddedildi (bozuk gövde, desteklenmeyen
+    parametre). Retry/fallback faydasız: sıradaki model de aynı gövdeyi alacak."""
+
+
+class LLMModelNotFoundError(LLMError):
+    """404 — model bu sağlayıcıda yok ya da bu hesabın ona erişimi yok.
+
+    `LLMInvalidRequestError`'ın alt sınıfı DEĞİLDİR ve bu kasıtlıdır: istekte bir sorun
+    yok, yalnızca hedef model yok. Sağlayıcılar modelleri hizmetten kaldırdığında
+    (ölçüldü: Groq 22.08.2026'da `llama-3.3-70b-versatile` ve `llama-3.1-8b-instant`'ı
+    kaldırdı) config'de kalan ölü isim, sistemsel hata sayıldığı için `fallback_models`
+    zincirini atlayıp tüm run'ı öldürüyordu. Ayrı bir tür olunca `base.py::_try_models`
+    bunu genel `LLMError` dalında yakalar ve sıradaki modele geçer — çalışan bir fallback
+    varken run ölmez.
+
+    Retry EDİLMEZ (bkz. `base.py`'deki `retryable` listesi): eksik bir model saniyeler
+    içinde geri gelmez."""
 
 
 class LLMRequestTooLargeError(LLMInvalidRequestError):

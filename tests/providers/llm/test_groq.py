@@ -5,6 +5,7 @@ import pytest
 
 from content_factory.providers.llm.exceptions import (
     LLMInvalidRequestError,
+    LLMModelNotFoundError,
     LLMProviderUnavailableError,
     LLMRateLimitError,
     LLMRequestTooLargeError,
@@ -307,4 +308,80 @@ def test_undiagnosable_400_is_not_swallowed() -> None:
 
     with pytest.raises(LLMInvalidRequestError):
         provider.generate(_request(), agent_name="editor", run_id="r")
+    provider.close()
+
+
+def test_model_not_found_advances_to_the_next_fallback_model() -> None:
+    """404, tüm run'ı değil yalnızca O MODELİ elemeli.
+
+    22.08.2026: Groq `llama-3.3-70b-versatile`'ı hizmetten kaldırdı. 404 sistemsel bir
+    `LLMInvalidRequestError` sayıldığı için fallback zinciri hiç denenmiyor, pipeline
+    strategist adımında ölüyordu (bkz. exceptions.py::LLMModelNotFoundError)."""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        model = _json.loads(request.content)["model"]
+        seen.append(model)
+        if model == "kaldirilmis-model":
+            return httpx.Response(
+                404,
+                json={"error": {"message": "The model does not exist", "code": "model_not_found"}},
+            )
+        return _completion("plan hazır")
+
+    provider = _provider(handler)
+    response = provider.generate(
+        _request(model="kaldirilmis-model", fallback_models=["qwen/qwen3.6-27b"]),
+        agent_name="strategist",
+        run_id="r",
+    )
+
+    assert response.content == "plan hazır"
+    assert seen == ["kaldirilmis-model", "qwen/qwen3.6-27b"]
+    provider.close()
+
+
+def test_model_not_found_without_fallback_raises_a_distinct_error() -> None:
+    """Tek model ve o da yoksa operatör 'model yok' hatasını görmeli — genel bir
+    'geçersiz istek' değil, çünkü çözüm config'deki model adını değiştirmek."""
+    provider = _provider(
+        lambda request: httpx.Response(404, json={"error": {"code": "model_not_found"}})
+    )
+    with pytest.raises(LLMModelNotFoundError):
+        provider.generate(_request(model="kaldirilmis-model"), agent_name="strategist", run_id="r")
+    provider.close()
+
+
+def test_json_mode_disables_thinking_on_inline_reasoning_models() -> None:
+    """qwen'de JSON grameri ile düşünme bloğu bir arada üretilemiyor: ölçümde
+    `reasoning_format: parsed` tek başına dört denemenin dördünde de 400
+    `json_validate_failed` verdi. JSON isteyen çağrılarda düşünme kapatılır."""
+    bodies: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        bodies.append(_json.loads(request.content))
+        return _completion('{"decision":"approved"}')
+
+    provider = _provider(handler)
+    provider.generate(
+        _request(model="qwen/qwen3.6-27b", response_format="json_object"),
+        agent_name="editor",
+        run_id="r",
+    )
+    # JSON istenmeyen çağrıda düşünme açık kalır — orada bir çakışma yok.
+    provider.generate(_request(model="qwen/qwen3.6-27b"), agent_name="writer", run_id="r")
+    # Reasoning yapmayan/ayrı alanda yapan aileye hiç gönderilmez.
+    provider.generate(
+        _request(model="openai/gpt-oss-20b", response_format="json_object"),
+        agent_name="editor",
+        run_id="r",
+    )
+
+    assert bodies[0]["reasoning_effort"] == "none"
+    assert "reasoning_effort" not in bodies[1]
+    assert "reasoning_effort" not in bodies[2]
     provider.close()

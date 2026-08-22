@@ -18,6 +18,7 @@ from content_factory.providers.llm.exceptions import (
     LLMAuthenticationError,
     LLMInsufficientCreditError,
     LLMInvalidRequestError,
+    LLMModelNotFoundError,
     LLMProviderUnavailableError,
     LLMRateLimitError,
     LLMRequestTooLargeError,
@@ -81,11 +82,13 @@ class GroqProvider(BaseLLMProvider):
     def _do_generate(self, request: LLMRequest, *, model: str) -> LLMResponse:
         self._require_api_key()
         payload = self._build_payload(request, model=model)
-        # İstek en fazla iki kez düzeltilip yeniden denenir. Düzeltmelerin hepsi
+        # İstek en fazla üç kez düzeltilip yeniden denenir. Düzeltmelerin hepsi
         # `LLMInvalidRequestError` ailesinde olduğu için tek yerde ayrıştırılır; birden
-        # fazla tur gerekmesinin sebebi, bir modelin hem `reasoning_format`'ı hem
-        # `response_format`'ı reddedebilmesi (Groq 400'de yalnızca ilk sorunu bildirir).
-        for _ in range(2):
+        # fazla tur gerekmesinin sebebi, bir modelin `reasoning_effort`, `reasoning_format`
+        # ve `response_format`'tan birden fazlasını reddedebilmesi (Groq 400'de yalnızca
+        # ilk sorunu bildirir) — tur sayısı `_correct_payload`'ın düşürebildiği parametre
+        # sayısıyla eşit tutulur.
+        for _ in range(3):
             try:
                 response = self._post(payload)
                 break
@@ -141,7 +144,7 @@ class GroqProvider(BaseLLMProvider):
             # miktarını bildirdiği için istek o kadar daraltılır: yarısı üretilmiş
             # bir makaleyi çöpe atmaktansa biraz daha kısa bir yanıt yeğdir.
             return self._shrink_max_tokens(payload, exc, model=model)
-        for parameter in ("reasoning_format", "response_format"):
+        for parameter in ("reasoning_effort", "reasoning_format", "response_format"):
             # Model ailesi tahmini yanlıştı: bu model parametreyi desteklemiyor.
             # `response_format` düşürüldüğünde JSON garantisi prompt seviyesine iner —
             # çağıran taraf (`utils.json_llm.parse_llm_json`) bunu zaten kaldırabiliyor.
@@ -192,8 +195,16 @@ class GroqProvider(BaseLLMProvider):
     yanıt max_tokens'a takılırsa geriye kapanmamış bir düşünme bloğundan başka bir şey
     kalmıyor. Groq'un `reasoning_format: "parsed"` parametresi düşünmeyi ayrı bir alana
     taşıyıp `content`'i temiz bırakır. Parametre yalnızca reasoning modellerinde geçerli
-    (llama gibi modeller 400 döndürür), bu yüzden aileye göre gönderilir; yine de yanlış
-    tahmine karşı `_post` 400'de parametresiz bir kez daha dener."""
+    (desteklemeyen modeller 400 döndürür), bu yüzden aileye göre gönderilir; yine de
+    yanlış tahmine karşı `_do_generate` 400'de parametresiz bir kez daha dener.
+
+    DİKKAT — `response_format: json_object` ile bu YETMEZ: Groq JSON kipinde çıktıyı
+    gramer seviyesinde kısıtladığı için model düşünme bloğunu üretemiyor ve istek
+    `json_validate_failed` (400, boş `failed_generation`) ile düşüyor. Ölçüldü
+    (22.08.2026, qwen3.6-27b): `reasoning_format: "parsed"` ile 700 ve 2000 max_tokens'ta
+    DÖRT denemenin dördü de 400; `reasoning_effort: "none"` eklendiğinde aynı istek
+    43-186 token'da temiz JSON döndürüyor. Bu yüzden JSON kipinde düşünme kapatılır
+    (bkz. `_build_payload`)."""
 
     def _build_payload(self, request: LLMRequest, *, model: str) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -204,6 +215,12 @@ class GroqProvider(BaseLLMProvider):
         }
         if model.startswith(self.INLINE_REASONING_MODEL_PREFIXES):
             payload["reasoning_format"] = "parsed"
+            if request.response_format == "json_object":
+                # JSON grameri ile düşünme bloğu bir arada üretilemiyor — düşünme
+                # kapatılmazsa istek `json_validate_failed` ile 400 alıyor
+                # (bkz. INLINE_REASONING_MODEL_PREFIXES). Bu roller zaten kısa,
+                # şemaya bağlı çıktılar üretiyor; düşünmeden kaybedilen bir şey yok.
+                payload["reasoning_effort"] = "none"
         if request.response_format == "json_object":
             # Yapısal çıktı: model JSON üretmeye gramer seviyesinde zorlanır. Groq bu
             # kipte prompt'un "JSON" sözcüğünü içermesini şart koşar — JSON isteyen
@@ -256,7 +273,16 @@ class GroqProvider(BaseLLMProvider):
                 limit=limit,
                 requested=requested,
             )
-        if status in (400, 404):
+        if status == 404:
+            # Model Groq'ta yok (ya da bu hesabın erişimi yok). İstek bozuk değil, bu
+            # yüzden `LLMInvalidRequestError` DEĞİL: sıradaki fallback modeli denenmeli
+            # (bkz. exceptions.py::LLMModelNotFoundError).
+            raise LLMModelNotFoundError(
+                f"Groq'ta model bulunamadı ({status}): {response.text} — "
+                f"models.yaml'daki model adını güncelleyin; güncel liste: "
+                f"GET https://api.groq.com/openai/v1/models"
+            )
+        if status == 400:
             raise LLMInvalidRequestError(
                 f"Groq geçersiz istek ({status}): {response.text}"
             )

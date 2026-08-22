@@ -30,6 +30,7 @@ from content_factory.providers.llm.exceptions import (
     LLMAuthenticationError,
     LLMInsufficientCreditError,
     LLMInvalidRequestError,
+    LLMModelNotFoundError,
     LLMProviderUnavailableError,
     LLMRateLimitError,
 )
@@ -240,9 +241,15 @@ def _raise_for_status(response: httpx.Response, *, model: str) -> None:
         )
     if status == 429:
         raise LLMRateLimitError(f"Replicate rate limit (model={model}): {detail}")
-    if status in (400, 404, 422):
+    if status == 404:
+        # Yalnızca bu model yok — sıradaki fallback denenebilir.
+        raise LLMModelNotFoundError(
+            f"Replicate'te model bulunamadı ({status}, model={model}): {detail}. "
+            f"Model adı `sahip/model` biçiminde mi?"
+        )
+    if status in (400, 422):
         raise LLMInvalidRequestError(
-            f"Geçersiz istek ({status}, model={model}): {detail}. Model adı `sahip/model` "
-            f"biçiminde mi ve bu parametreleri destekliyor mu?"
+            f"Geçersiz istek ({status}, model={model}): {detail}. Model bu parametreleri "
+            f"destekliyor mu?"
         )
     raise LLMProviderUnavailableError(f"Replicate sunucu hatası ({status}, model={model})")
