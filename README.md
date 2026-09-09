@@ -11,7 +11,6 @@ The first (and currently only) example brand: **Oleart** (`brands/oleart/`, `kno
 - Using the Knowledge Base / adding a new brand: [`knowledge/README.md`](./knowledge/README.md)
 - LLM provider layer / adding a new provider: [`src/content_factory/providers/llm/README.md`](./src/content_factory/providers/llm/README.md)
 
-## The film — 38 seconds
 
 [![Content Factory — a 38 second film](./docs/promo/content-factory-promo.gif)](./docs/promo/content-factory-promo.mp4)
 
